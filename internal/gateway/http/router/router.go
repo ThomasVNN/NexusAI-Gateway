@@ -82,13 +82,14 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"UP"}`))
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"UP","service":"nexusai-gateway","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))))
 	})
 
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		dbStatus := "disconnected"
-		
+		isReady := true
+
 		if db != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
@@ -96,11 +97,31 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 				dbStatus = "connected"
 			} else {
 				dbStatus = "degraded"
+				if !cfg.EnableSandboxFallback {
+					isReady = false
+				}
+			}
+		} else {
+			if !cfg.EnableSandboxFallback {
+				isReady = false
 			}
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(fmt.Sprintf(`{"status":"UP","database":"%s"}`, dbStatus)))
+		statusStr := "UP"
+		statusCode := http.StatusOK
+		if !isReady {
+			statusStr = "DOWN"
+			statusCode = http.StatusServiceUnavailable
+		}
+
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			`{"status":"%s","service":"nexusai-gateway","database":"%s","sandbox_fallback_active":%t,"timestamp":"%s"}`,
+			statusStr,
+			dbStatus,
+			cfg.EnableSandboxFallback,
+			time.Now().UTC().Format(time.RFC3339),
+		)))
 	})
 
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
