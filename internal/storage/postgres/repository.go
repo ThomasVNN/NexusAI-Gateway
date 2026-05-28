@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
@@ -62,6 +61,31 @@ func (r *KeyRepository) Save(ctx context.Context, key *model.RegisteredKey) erro
 	return err
 }
 
+func (r *KeyRepository) ListAll(ctx context.Context) ([]*model.RegisteredKey, error) {
+	query := `SELECT id, key_hash, name, source_app, daily_quota, hourly_quota, active, created_at, updated_at 
+	          FROM registered_keys ORDER BY created_at DESC`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []*model.RegisteredKey
+	for rows.Next() {
+		var key model.RegisteredKey
+		err := rows.Scan(
+			&key.ID, &key.KeyHash, &key.Name, &key.SourceApp,
+			&key.DailyQuota, &key.HourlyQuota, &key.Active,
+			&key.CreatedAt, &key.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, &key)
+	}
+	return keys, nil
+}
+
 type UsageRepository struct {
 	db *postgres.DB
 }
@@ -102,4 +126,25 @@ func (r *UsageRepository) GetDailyUsage(ctx context.Context, keyID string) (int,
 		return 0, err
 	}
 	return count, nil
+}
+
+func (r *UsageRepository) GetAggregateUsage(ctx context.Context) (map[string]interface{}, error) {
+	query := `SELECT COUNT(*), COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(completion_tokens), 0), COALESCE(AVG(latency_ms), 0)
+	          FROM usage_records`
+	var totalCalls int
+	var totalPromptTokens int
+	var totalCompletionTokens int
+	var avgLatency float64
+
+	err := r.db.QueryRowContext(ctx, query).Scan(&totalCalls, &totalPromptTokens, &totalCompletionTokens, &avgLatency)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"total_calls":             totalCalls,
+		"total_prompt_tokens":     totalPromptTokens,
+		"total_completion_tokens": totalCompletionTokens,
+		"average_latency_ms":      avgLatency,
+	}, nil
 }
