@@ -148,3 +148,78 @@ func (r *UsageRepository) GetAggregateUsage(ctx context.Context) (map[string]int
 		"average_latency_ms":      avgLatency,
 	}, nil
 }
+
+func (r *UsageRepository) ListLogs(ctx context.Context) ([]*model.UsageRecord, error) {
+	query := `SELECT id, key_id, model_id, prompt_tokens, completion_tokens, latency_ms, source_app, created_at 
+	          FROM usage_records ORDER BY created_at DESC LIMIT 100`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*model.UsageRecord
+	for rows.Next() {
+		var record model.UsageRecord
+		err := rows.Scan(
+			&record.ID, &record.KeyID, &record.ModelID, &record.PromptTokens,
+			&record.CompletionTokens, &record.LatencyMS, &record.SourceApp, &record.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, &record)
+	}
+	return logs, nil
+}
+
+type ProviderRepository struct {
+	db *postgres.DB
+}
+
+func NewProviderRepository(db *postgres.DB) *ProviderRepository {
+	return &ProviderRepository{db: db}
+}
+
+func (r *ProviderRepository) ListAll(ctx context.Context) ([]*model.ProviderConnection, error) {
+	query := `SELECT id, provider, name, api_key, endpoint, is_active, priority, created_at, updated_at 
+	          FROM provider_connections ORDER BY priority ASC`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*model.ProviderConnection
+	for rows.Next() {
+		var p model.ProviderConnection
+		err := rows.Scan(&p.ID, &p.Provider, &p.Name, &p.APIKey, &p.Endpoint, &p.IsActive, &p.Priority, &p.CreatedAt, &p.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, &p)
+	}
+	return list, nil
+}
+
+func (r *ProviderRepository) Save(ctx context.Context, conn *model.ProviderConnection) error {
+	query := `INSERT INTO provider_connections (id, provider, name, api_key, endpoint, is_active, priority, created_at, updated_at)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	          ON CONFLICT (id) DO UPDATE 
+	          SET provider = EXCLUDED.provider, name = EXCLUDED.name, api_key = EXCLUDED.api_key, 
+	              endpoint = EXCLUDED.endpoint, is_active = EXCLUDED.is_active, priority = EXCLUDED.priority, 
+	              updated_at = CURRENT_TIMESTAMP`
+	_, err := r.db.ExecContext(ctx, query, conn.ID, conn.Provider, conn.Name, conn.APIKey, conn.Endpoint, conn.IsActive, conn.Priority)
+	return err
+}
+
+func (r *ProviderRepository) GetByID(ctx context.Context, id string) (*model.ProviderConnection, error) {
+	query := `SELECT id, provider, name, api_key, endpoint, is_active, priority, created_at, updated_at 
+	          FROM provider_connections WHERE id = $1`
+	var p model.ProviderConnection
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&p.ID, &p.Provider, &p.Name, &p.APIKey, &p.Endpoint, &p.IsActive, &p.Priority, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}

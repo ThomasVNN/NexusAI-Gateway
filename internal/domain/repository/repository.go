@@ -20,4 +20,12 @@ type UsageRepository interface {
 	GetHourlyUsage(ctx context.Context, keyID string) (int, error)
 	GetDailyUsage(ctx context.Context, keyID string) (int, error)
 	GetAggregateUsage(ctx context.Context) (map[string]interface{}, error)
+	ListLogs(ctx context.Context) ([]*model.UsageRecord, error)
+}
+
+// ProviderRepository handles active AI provider credentials and configurations
+type ProviderRepository interface {
+	ListAll(ctx context.Context) ([]*model.ProviderConnection, error)
+	Save(ctx context.Context, conn *model.ProviderConnection) error
+	GetByID(ctx context.Context, id string) (*model.ProviderConnection, error)
 }

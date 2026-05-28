@@ -7,7 +7,7 @@ services:
       dockerfile: deployments/Dockerfile
     container_name: nexusai-gateway
     ports:
-      - "20129:20129"
+      - "20130:20129"
     environment:
       - PORT=20129
       - DATABASE_URL=postgres://postgres:postgres_secure_pass@postgres-nexus:5432/nexusai_gateway?sslmode=disable

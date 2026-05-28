@@ -21,7 +21,7 @@ docker logs nexusai-gateway | grep -i "Starting NexusAI-Gateway" || true
 
 # 3. Test API Key Registration Endpoint
 echo "Test A: Creating secure API Key..."
-KEY_RESPONSE=$(curl -s -X POST http://localhost:20129/api/admin/keys \
+KEY_RESPONSE=$(curl -s -X POST http://localhost:20130/api/admin/keys \
   -H "Content-Type: application/json" \
   -d '{"name":"E2E-Test-Key","source_app":"openwebui","daily_quota":100,"hourly_quota":20}')
 
@@ -37,7 +37,7 @@ echo "Generated Token: $API_TOKEN"
 
 # 4. Test OpenAI Chat Completions streaming with PII Redaction
 echo "Test B: Invoking SSE Completions with PII payload (email & card)..."
-CHAT_RESPONSE=$(curl -s -X POST http://localhost:20129/v1/chat/completions \
+CHAT_RESPONSE=$(curl -s -X POST http://localhost:20130/v1/chat/completions \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hi my email is target@nexus.com and my credit card is 1234-5678-9012-3456"}],"stream":true}')
@@ -47,7 +47,7 @@ echo "$CHAT_RESPONSE"
 
 # 5. Check Audit logs and telemetry counters
 echo "Test C: Requesting Aggregate System Telemetry..."
-TELEMETRY=$(curl -s http://localhost:20129/api/admin/usage)
+TELEMETRY=$(curl -s http://localhost:20130/api/admin/usage)
 echo "System Metrics:"
 echo "$TELEMETRY"
 

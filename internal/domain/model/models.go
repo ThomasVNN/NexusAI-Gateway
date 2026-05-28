@@ -33,3 +33,23 @@ type MCPTool struct {
 	Description string      `json:"description"`
 	InputSchema interface{} `json:"inputSchema"`
 }
+
+// ProviderConnection represents active AI model provider integration settings
+type ProviderConnection struct {
+	ID        string    `json:"id"`
+	Provider  string    `json:"provider"`
+	Name      string    `json:"name"`
+	APIKey    string    `json:"api_key"`
+	Endpoint  string    `json:"endpoint"`
+	IsActive  bool      `json:"is_active"`
+	Priority  int       `json:"priority"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SystemSettings holds gateway portal metadata
+type SystemSettings struct {
+	SetupComplete bool   `json:"setup_complete"`
+	Theme         string `json:"theme"`
+	LoggingLevel  string `json:"logging_level"`
+}

@@ -67,6 +67,18 @@ func bootstrapSchema(ctx context.Context, db *sql.DB) error {
 	    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS provider_connections (
+	    id VARCHAR(255) PRIMARY KEY,
+	    provider VARCHAR(100) NOT NULL,
+	    name VARCHAR(255) NOT NULL,
+	    api_key TEXT,
+	    endpoint TEXT,
+	    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+	    priority INT NOT NULL DEFAULT 0,
+	    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+	    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_usage_key_created ON usage_records(key_id, created_at);
 	`
 	_, err := db.ExecContext(ctx, schemaQuery)
