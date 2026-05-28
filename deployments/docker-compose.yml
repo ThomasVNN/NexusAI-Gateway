@@ -10,27 +10,37 @@ services:
       - "20129:20129"
     environment:
       - PORT=20129
-      - DATABASE_URL=postgres://postgres:postgres@postgres-db:5432/vectors?sslmode=disable
+      - DATABASE_URL=postgres://postgres:postgres_secure_pass@postgres-nexus:5432/nexusai_gateway?sslmode=disable
+      - REDIS_URL=redis://redis-nexus:6379/1
+      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     depends_on:
-      postgres-db:
+      postgres-nexus:
         condition: service_healthy
+      redis-nexus:
+        condition: service_started
 
-  postgres-db:
+  postgres-nexus:
     image: postgres:16-alpine
-    container_name: nexusai-db
+    container_name: postgres-nexus
     ports:
-      - "5432:5432"
+      - "5438:5432"
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=vectors
+      - POSTGRES_PASSWORD=postgres_secure_pass
+      - POSTGRES_DB=nexusai_gateway
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d vectors"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nexusai_gateway"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  redis-nexus:
+    image: redis:7-alpine
+    container_name: redis-nexus
+    ports:
+      - "6378:6379"
 
 volumes:
   pgdata:

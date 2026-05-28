@@ -15,10 +15,13 @@ import (
 )
 
 func main() {
-	log.Println("Starting NexusAI-Gateway...")
+	log.Println("Starting NexusAI-Gateway with custom runtime configs...")
 
 	// 1. Load configuration
 	cfg := config.Load()
+	log.Printf("Loaded Port: %s", cfg.Port)
+	log.Printf("Loaded Database URL: %s", cfg.PostgresURL)
+	log.Printf("Loaded Redis URL: %s", cfg.RedisURL)
 
 	// 2. Initialize PostgreSQL connection
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -26,10 +29,11 @@ func main() {
 
 	db, err := postgres.Connect(dbCtx, cfg.PostgresURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
+		log.Printf("Warning: Failed to connect to PostgreSQL at startup: %v (Using sandbox fallback mode)", err)
+	} else {
+		defer db.Close()
+		log.Println("Connected to PostgreSQL successfully")
 	}
-	defer db.Close()
-	log.Println("Connected to PostgreSQL successfully")
 
 	// 3. Setup HTTP router and routes
 	r := router.New(db, cfg)

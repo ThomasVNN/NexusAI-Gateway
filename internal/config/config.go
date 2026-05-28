@@ -8,6 +8,7 @@ import (
 type Config struct {
 	Port        string
 	PostgresURL string
+	RedisURL    string
 	JWKSPrivate string
 	OIDCIssuer  string
 }
@@ -16,12 +17,17 @@ type Config struct {
 func Load() *Config {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "20129" // Default to LocalAgent OmniRoute port
+		port = "20129"
 	}
 
 	postgresURL := os.Getenv("DATABASE_URL")
 	if postgresURL == "" {
-		postgresURL = "postgres://postgres:postgres@localhost:5432/vectors?sslmode=disable"
+		postgresURL = "postgres://postgres:postgres_secure_pass@postgres-nexus:5432/nexusai_gateway?sslmode=disable"
+	}
+
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://redis-nexus:6379/1"
 	}
 
 	oidcIssuer := os.Getenv("OIDC_ISSUER")
@@ -32,6 +38,7 @@ func Load() *Config {
 	return &Config{
 		Port:        port,
 		PostgresURL: postgresURL,
+		RedisURL:    redisURL,
 		OIDCIssuer:  oidcIssuer,
 	}
 }
