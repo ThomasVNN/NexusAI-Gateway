@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -e
+
+npx --no-install lint-staged --config configs/lint-staged.config.cjs
+

@@ -1,0 +1,18 @@
+# Map these ownership groups to your GitHub organization teams before enabling branch protection.
+
+* @nexusai-gateway-maintainers
+
+/cmd/ @nexusai-gateway-maintainers
+/internal/auth/ @nexusai-platform-security
+/internal/config/ @nexusai-gateway-maintainers
+/internal/db/ @nexusai-data-platform
+/internal/domain/ @nexusai-gateway-maintainers
+/internal/gateway/ @nexusai-gateway-team
+/internal/privacy/ @nexusai-platform-security
+/internal/storage/memory/ @nexusai-gateway-maintainers
+/internal/storage/postgres/ @nexusai-data-platform
+/pkg/ @nexusai-gateway-maintainers
+/web/ @nexusai-gateway-ui
+/deployments/ @nexusai-platform-infra
+/docs/ @nexusai-gateway-maintainers
+

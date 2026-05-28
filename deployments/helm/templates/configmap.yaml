@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nexusai-gateway.fullname" . }}-config
+  labels:
+    {{- include "nexusai-gateway.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.config.port | quote }}
+  OIDC_ISSUER: {{ .Values.config.oidcIssuer | quote }}
+  REDIS_URL: {{ .Values.config.redisUrl | quote }}

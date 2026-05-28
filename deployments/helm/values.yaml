@@ -1,0 +1,59 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/thomasvnn/nexusai-gateway
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 20129
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+  hosts:
+    - host: gateway.nexusai.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: nexusai-gateway-tls
+      hosts:
+        - gateway.nexusai.local
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+livenessProbe:
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  successThreshold: 1
+  failureThreshold: 3
+
+config:
+  port: "20129"
+  oidcIssuer: "https://auth.nexusai.local"
+  redisUrl: "redis://redis-nexus:6379/1"
+
+secrets:
+  databaseUrl: "postgres://postgres:postgres_secure_pass@postgres-nexus:5432/nexusai_gateway?sslmode=disable"
+  initialPassword: "postgres_secure_pass"

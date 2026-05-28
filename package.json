@@ -1,0 +1,17 @@
+{
+  "name": "nexusai-gateway-repo-tools",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "prepare": "husky",
+    "lint-staged": "lint-staged --config configs/lint-staged.config.cjs",
+    "commitlint": "commitlint --config configs/commitlint.config.cjs --edit .git/COMMIT_EDITMSG"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.1",
+    "@commitlint/config-conventional": "^19.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11"
+  }
+}
+

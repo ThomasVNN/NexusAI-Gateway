@@ -1,0 +1,46 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, staging, develop ]
+  pull_request:
+    branches: [ main, staging, develop ]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Code Quality Check
+    uses: ./.github/workflows/lint.yml
+    secrets: inherit
+    continue-on-error: true # Let other checks run independently
+
+  test:
+    name: Unit and Integration Tests
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
+  security:
+    name: Security Scans
+    uses: ./.github/workflows/security.yml
+    secrets: inherit
+
+  build-dry-run:
+    name: Verify Docker Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build local image (dry run)
+        uses: docker/build-push-action@v5
+        with:
+          context: NexusAI-Gateway
+          file: NexusAI-Gateway/deployments/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
