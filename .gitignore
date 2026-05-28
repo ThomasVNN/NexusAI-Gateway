@@ -1,0 +1,32 @@
+# Binary triggers
+bin/
+dist/
+web/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, green with coverage
+*.test
+*.out
+
+# Go dependencies
+vendor/
+
+# IDEs and OS
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+
+# Local configuration and logs
+.env
+.env.*
+*.log
+logs/
