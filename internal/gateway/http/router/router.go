@@ -23,14 +23,15 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Handler registrations
 	chatHandler := handler.NewChatHandler(keyRepo, usageRepo, piiEngine)
 	modelHandler := handler.NewModelHandler(db)
-	mcpHandler := mcp.NewHandler()
+	mcpHandler := mcp.NewHandler(piiEngine)
 
 	// OpenAI endpoints
 	mux.HandleFunc("/v1/chat/completions", chatHandler.ServeHTTP)
 	mux.HandleFunc("/v1/models", modelHandler.ServeHTTP)
 
-	// Model Context Protocol (MCP) Stream Endpoint
+	// Model Context Protocol (MCP) Stream & Message Endpoints
 	mux.HandleFunc("/api/mcp/stream", mcpHandler.ServeHTTP)
+	mux.HandleFunc("/api/mcp/message", mcpHandler.ServeHTTP)
 
 	// Single Page Application static server placeholder
 	RegisterStaticRoutes(mux)
