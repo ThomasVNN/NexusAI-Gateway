@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  nexusai-gateway:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    container_name: nexusai-gateway
+    ports:
+      - "20129:20129"
+    environment:
+      - PORT=20129
+      - DATABASE_URL=postgres://postgres:postgres@postgres-db:5432/vectors?sslmode=disable
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: nexusai-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=vectors
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vectors"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
