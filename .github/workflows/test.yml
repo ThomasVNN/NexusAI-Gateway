@@ -20,22 +20,20 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: NexusAI-Gateway/go.mod
-          cache-dependency-path: NexusAI-Gateway/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
           cache: true
 
       - name: Install Dependencies
         run: |
-          cd NexusAI-Gateway
           go mod download
 
       - name: Run Tests
         run: |
-          cd NexusAI-Gateway
           go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v4
         with:
           name: go-coverage
-          path: NexusAI-Gateway/coverage.out
+          path: coverage.out

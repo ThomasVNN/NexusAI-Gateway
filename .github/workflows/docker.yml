@@ -44,8 +44,8 @@ jobs:
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: NexusAI-Gateway
-          file: NexusAI-Gateway/deployments/Dockerfile
+          context: .
+          file: deployments/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

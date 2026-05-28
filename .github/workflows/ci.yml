@@ -39,8 +39,8 @@ jobs:
       - name: Build local image (dry run)
         uses: docker/build-push-action@v5
         with:
-          context: NexusAI-Gateway
-          file: NexusAI-Gateway/deployments/Dockerfile
+          context: .
+          file: deployments/Dockerfile
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

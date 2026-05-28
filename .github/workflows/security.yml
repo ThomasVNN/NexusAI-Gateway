@@ -38,15 +38,14 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: NexusAI-Gateway/go.mod
-          cache-dependency-path: NexusAI-Gateway/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck
         run: |
-          cd NexusAI-Gateway
           govulncheck ./...
 
   trivy:
@@ -58,10 +57,8 @@ jobs:
 
       - name: Build local image for scanning
         run: |
-          cd NexusAI-Gateway
           # Build dummy web to ensure embed doesn't fail
-          mkdir -p web/dist && touch web/dist/index.html
-          docker build -t nexusai-gateway:test -f deployments/Dockerfile .
+          mkdir -p web/dist && touch web/dist/index.html && docker build -t nexusai-gateway:test -f deployments/Dockerfile .
 
       - name: Trivy Vulnerability Scan
         uses: aquasecurity/trivy-action@master
