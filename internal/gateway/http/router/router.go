@@ -7,14 +7,21 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
+	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
 )
 
 // New constructs the primary routing multiplexer for http traffic
 func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux := http.NewServeMux()
 
+	// Initialize repositories
+	keyRepo := storage.NewKeyRepository(db)
+	usageRepo := storage.NewUsageRepository(db)
+	piiEngine := privacy.NewEngine()
+
 	// Handler registrations
-	chatHandler := handler.NewChatHandler(db)
+	chatHandler := handler.NewChatHandler(keyRepo, usageRepo, piiEngine)
 	modelHandler := handler.NewModelHandler(db)
 	mcpHandler := mcp.NewHandler()
 
