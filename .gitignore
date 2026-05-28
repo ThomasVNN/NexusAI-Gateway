@@ -1,32 +1,31 @@
-# Binary triggers
+# Build outputs
 bin/
 dist/
 web/dist/
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, green with coverage
+web/node_modules/
+node_modules/
+coverage/
 *.test
 *.out
 
-# Go dependencies
+# Go
 vendor/
+.coverprofile
 
-# IDEs and OS
+# IDEs and OS files
 .idea/
 .vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+*.iml
 .DS_Store
 
-# Local configuration and logs
+# Environment and logs
 .env
 .env.*
+!.env.example
 *.log
 logs/
+
+# Temporary files
+*.swp
+*.tmp
+tmp/

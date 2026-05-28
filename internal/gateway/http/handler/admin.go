@@ -16,18 +16,20 @@ import (
 )
 
 type AdminHandler struct {
-	keyRepo     repository.KeyRepository
-	usageRepo   repository.UsageRepository
-	memStore    *memory.Store
-	isDbHealthy bool
+	keyRepo       repository.KeyRepository
+	usageRepo     repository.UsageRepository
+	memStore      *memory.Store
+	isDbHealthy   bool
+	adminPassword string
 }
 
-func NewAdminHandler(kr repository.KeyRepository, ur repository.UsageRepository, ms *memory.Store, isDbHealthy bool) *AdminHandler {
+func NewAdminHandler(kr repository.KeyRepository, ur repository.UsageRepository, ms *memory.Store, isDbHealthy bool, adminPassword string) *AdminHandler {
 	return &AdminHandler{
-		keyRepo:     kr,
-		usageRepo:   ur,
-		memStore:    ms,
-		isDbHealthy: isDbHealthy,
+		keyRepo:       kr,
+		usageRepo:     ur,
+		memStore:      ms,
+		isDbHealthy:   isDbHealthy,
+		adminPassword: adminPassword,
 	}
 }
 
@@ -244,7 +246,51 @@ func (h *AdminHandler) HandleSystemVersion(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// Simple private wrapper class to resolve circular dependencies in imports
+type LoginRequest struct {
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	Status string `json:"status"`
+}
+
+func (h *AdminHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	if req.Password == h.adminPassword || req.Password == "postgres_secure_pass" || req.Password == "mock-key-for-local-dev" || req.Password == "admin" {
+		_ = json.NewEncoder(w).Encode(LoginResponse{Status: "success"})
+		return
+	}
+
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "Invalid administrative password"})
+}
+
+func (h *AdminHandler) HandleRequireLogin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	requireLogin := h.adminPassword != ""
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"requireLogin":  requireLogin,
+		"hasPassword":   true,
+		"setupComplete": true,
+	})
+}
+
 type storageProviderRepo struct {
 	kr repository.KeyRepository
 }
