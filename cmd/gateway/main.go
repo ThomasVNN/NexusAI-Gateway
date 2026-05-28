@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,13 +15,26 @@ import (
 )
 
 func main() {
-	log.Println("Starting NexusAI-Gateway with custom runtime configs...")
+	// Configure global slog JSON logger as the standard logging facility
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+
+	slog.Info("Starting NexusAI-Gateway with custom runtime configs...",
+		slog.String("service", "nexusai-gateway"),
+	)
 
 	// 1. Load configuration
 	cfg := config.Load()
-	log.Printf("Loaded Port: %s", cfg.Port)
-	log.Printf("Loaded Database URL: %s", cfg.PostgresURL)
-	log.Printf("Loaded Redis URL: %s", cfg.RedisURL)
+	if err := cfg.Validate(); err != nil {
+		slog.Error("FATAL: Configuration validation failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+	slog.Info("Configuration loaded successfully",
+		slog.String("port", cfg.Port),
+		slog.String("env", cfg.AppEnv),
+		slog.Bool("sandbox_fallback", cfg.EnableSandboxFallback),
+	)
 
 	// 2. Initialize PostgreSQL connection
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -29,10 +42,10 @@ func main() {
 
 	db, err := postgres.Connect(dbCtx, cfg.PostgresURL)
 	if err != nil {
-		log.Printf("Warning: Failed to connect to PostgreSQL at startup: %v (Using sandbox fallback mode)", err)
+		slog.Warn("Failed to connect to PostgreSQL at startup (Using sandbox fallback mode)", slog.Any("error", err))
 	} else {
 		defer db.Close()
-		log.Println("Connected to PostgreSQL successfully")
+		slog.Info("Connected to PostgreSQL successfully")
 	}
 
 	// 3. Setup HTTP router and routes
@@ -47,9 +60,10 @@ func main() {
 
 	// 4. Graceful shutdown orchestration
 	go func() {
-		log.Printf("Server listening on port %s", cfg.Port)
+		slog.Info("Server listening", slog.String("port", cfg.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			slog.Error("Server error", slog.Any("error", err))
+			os.Exit(1)
 		}
 	}()
 
@@ -57,13 +71,14 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down gracefully...")
+	slog.Info("Shutting down gracefully...")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		slog.Error("Server forced to shutdown", slog.Any("error", err))
+		os.Exit(1)
 	}
 
-	log.Println("NexusAI-Gateway stopped")
+	slog.Info("NexusAI-Gateway stopped")
 }

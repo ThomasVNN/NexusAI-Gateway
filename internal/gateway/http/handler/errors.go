@@ -2,9 +2,10 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
-	"time"
+	"strings"
+	"context"
 )
 
 type ErrorDetail struct {
@@ -25,18 +26,6 @@ type APIErrorResponse struct {
 	Error   *ErrorPayload `json:"error"`
 }
 
-type StructuredLog struct {
-	Time          string `json:"time"`
-	Level         string `json:"level"`
-	Message       string `json:"msg"`
-	Service       string `json:"service"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	Event         string `json:"event,omitempty"`
-	Reason        string `json:"reason,omitempty"`
-	Path          string `json:"path,omitempty"`
-	Method        string `json:"method,omitempty"`
-}
-
 func WriteError(w http.ResponseWriter, statusCode int, errorCode string, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -55,28 +44,32 @@ func WriteError(w http.ResponseWriter, statusCode int, errorCode string, message
 
 func LogSecurityEvent(r *http.Request, level string, msg string, event string, reason string) {
 	corrID := ""
+	path := ""
+	method := ""
 	if r != nil {
 		corrID = r.Header.Get("X-Correlation-ID")
+		path = r.URL.Path
+		method = r.Method
 	}
 
-	logEntry := StructuredLog{
-		Time:          time.Now().UTC().Format(time.RFC3339),
-		Level:         level,
-		Message:       msg,
-		Service:       "nexusai-gateway",
-		CorrelationID: corrID,
-		Event:         event,
-		Reason:        reason,
+	attrs := []slog.Attr{
+		slog.String("service", "nexusai-gateway"),
+		slog.String("event", event),
+		slog.String("reason", reason),
 	}
-	if r != nil {
-		logEntry.Path = r.URL.Path
-		logEntry.Method = r.Method
+	if corrID != "" {
+		attrs = append(attrs, slog.String("correlation_id", corrID))
+	}
+	if path != "" {
+		attrs = append(attrs, slog.String("path", path), slog.String("method", method))
 	}
 
-	jsonBytes, err := json.Marshal(logEntry)
-	if err == nil {
-		log.Println(string(jsonBytes))
-	} else {
-		log.Printf("Error marshal log: %v", err)
+	switch strings.ToUpper(level) {
+	case "ERROR":
+		slog.LogAttrs(context.Background(), slog.LevelError, msg, attrs...)
+	case "WARN", "WARNING":
+		slog.LogAttrs(context.Background(), slog.LevelWarn, msg, attrs...)
+	default:
+		slog.LogAttrs(context.Background(), slog.LevelInfo, msg, attrs...)
 	}
 }
