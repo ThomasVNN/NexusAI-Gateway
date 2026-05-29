@@ -7,13 +7,15 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/auth"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/domain/model"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/tenancy"
 )
 
 type mockKeyRepo struct {
@@ -62,7 +64,41 @@ func (m *mockUsageRepo) ListLogs(ctx context.Context) ([]*model.UsageRecord, err
 	return nil, nil
 }
 
-func TestChatHandlerPIIScrubbingAndStreaming(t *testing.T) {
+// Mock integration clients
+type mockModelPlatform struct {
+	response *integration.ModelRouteResponse
+	err      error
+}
+
+func (m *mockModelPlatform) Route(ctx context.Context, request *integration.ModelRouteRequest) (*integration.ModelRouteResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.response, nil
+}
+
+type mockSkillsClient struct {
+	response *integration.SkillResponse
+	err      error
+}
+
+func (m *mockSkillsClient) Execute(ctx context.Context, request *integration.SkillRequest) (*integration.SkillResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.response, nil
+}
+
+type mockKnowledgeClient struct {
+	content string
+	err     error
+}
+
+func (m *mockKnowledgeClient) Retrieve(ctx context.Context, query string) (string, error) {
+	return m.content, m.err
+}
+
+func TestChatHandlerSuccess(t *testing.T) {
 	rawKey := "ork_testkey123"
 	keyHash := auth.HashKey(rawKey)
 
@@ -72,13 +108,35 @@ func TestChatHandlerPIIScrubbingAndStreaming(t *testing.T) {
 			KeyHash:    keyHash,
 			DailyQuota: 10,
 			Active:     true,
+			SourceApp:  "test-app",
 		},
 	}
 	usageRepo := &mockUsageRepo{dailyUsage: 0}
 	piiEngine := privacy.NewEngine()
 
-	// Enable sandbox fallback so it falls back to mock stream when upstream is empty
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, true)
+	// Pipeline mocks
+	authMock := auth.NewAPIKeyAuthenticator(keyRepo, false)
+	tenantMock := tenancy.NewDefaultTenantResolver()
+	knowledgeMock := &mockKnowledgeClient{content: "System knowledge context"}
+	skillsMock := &mockSkillsClient{}
+	modelMock := &mockModelPlatform{
+		response: &integration.ModelRouteResponse{
+			ProviderID: "openai",
+			ModelName:  "gpt-4o",
+			URL:        "https://api.openai.com/v1",
+		},
+	}
+
+	pipelineExecutor := runtime.NewPipelineExecutor(
+		authMock,
+		tenantMock,
+		piiEngine,
+		knowledgeMock,
+		skillsMock,
+		modelMock,
+	)
+
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -91,6 +149,7 @@ func TestChatHandlerPIIScrubbingAndStreaming(t *testing.T) {
 	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+rawKey)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Correlation-ID", "custom-trace-12345")
 
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -100,13 +159,35 @@ func TestChatHandlerPIIScrubbingAndStreaming(t *testing.T) {
 	}
 
 	contentType := rr.Header().Get("Content-Type")
-	if contentType != "text/event-stream" {
-		t.Fatalf("expected content-type text/event-stream, got %s", contentType)
+	if contentType != "application/json" {
+		t.Fatalf("expected content-type application/json, got %s", contentType)
 	}
 
-	responseBody := rr.Body.String()
-	if !strings.Contains(responseBody, "data:") {
-		t.Fatalf("expected SSE data format in body, got: %s", responseBody)
+	var resp RuntimeResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+
+	if !resp.Success {
+		t.Fatalf("expected success true, got false")
+	}
+
+	if resp.Data == nil {
+		t.Fatalf("expected data field to be populated")
+	}
+
+	// Verify PII was redacted (secret@google.com should be scrubbed by privacy engine)
+	if strings.Contains(resp.Data.Answer, "secret@google.com") {
+		t.Errorf("expected sensitive email to be redacted in pipeline output")
+	}
+
+	// Verify trace ID propagation
+	if resp.Data.TraceID != "custom-trace-12345" {
+		t.Errorf("expected TraceID to be custom-trace-12345, got %s", resp.Data.TraceID)
+	}
+
+	if resp.Data.Usage.TotalTokens == 0 {
+		t.Errorf("expected usage tokens to be non-zero")
 	}
 }
 
@@ -122,11 +203,19 @@ func TestChatHandlerQuotaExceeded(t *testing.T) {
 			Active:     true,
 		},
 	}
-	// Setup mock usage repo to simulate quota exceeded limit
 	usageRepo := &mockUsageRepo{dailyUsage: 15}
 	piiEngine := privacy.NewEngine()
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false)
+	pipelineExecutor := runtime.NewPipelineExecutor(
+		auth.NewAPIKeyAuthenticator(keyRepo, false),
+		tenancy.NewDefaultTenantResolver(),
+		piiEngine,
+		&mockKnowledgeClient{},
+		&mockSkillsClient{},
+		&mockModelPlatform{},
+	)
+
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -159,15 +248,22 @@ func TestChatHandlerQuotaExceeded(t *testing.T) {
 func TestChatHandlerUnauthorized(t *testing.T) {
 	rawKey := "ork_nonexistentkey"
 
-	// Mock DB returning key not found (sql.ErrNoRows or key not found)
 	keyRepo := &mockKeyRepo{
 		err: errors.New("key not found by hash"),
 	}
 	usageRepo := &mockUsageRepo{dailyUsage: 0}
 	piiEngine := privacy.NewEngine()
 
-	// Disable sandbox fallback so it fails securely
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false)
+	pipelineExecutor := runtime.NewPipelineExecutor(
+		auth.NewAPIKeyAuthenticator(keyRepo, false),
+		tenancy.NewDefaultTenantResolver(),
+		piiEngine,
+		&mockKnowledgeClient{},
+		&mockSkillsClient{},
+		&mockModelPlatform{},
+	)
+
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -200,15 +296,22 @@ func TestChatHandlerUnauthorized(t *testing.T) {
 func TestChatHandlerDatabaseFailure(t *testing.T) {
 	rawKey := "ork_testkey123"
 
-	// Simulate an actual infrastructure failure (like connection timeout/closed)
 	keyRepo := &mockKeyRepo{
 		err: errors.New("pq: connection refused"),
 	}
 	usageRepo := &mockUsageRepo{dailyUsage: 0}
 	piiEngine := privacy.NewEngine()
 
-	// Even if sandbox fallback is enabled, actual infrastructure failures must deny requests!
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, true)
+	pipelineExecutor := runtime.NewPipelineExecutor(
+		auth.NewAPIKeyAuthenticator(keyRepo, true),
+		tenancy.NewDefaultTenantResolver(),
+		piiEngine,
+		&mockKnowledgeClient{},
+		&mockSkillsClient{},
+		&mockModelPlatform{},
+	)
+
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, true, pipelineExecutor)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -250,13 +353,21 @@ func TestChatHandlerQuotaDatabaseFailure(t *testing.T) {
 			Active:     true,
 		},
 	}
-	// Simulate datastore error during quota retrieval
 	usageRepo := &mockUsageRepo{
 		err: errors.New("driver: bad connection"),
 	}
 	piiEngine := privacy.NewEngine()
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false)
+	pipelineExecutor := runtime.NewPipelineExecutor(
+		auth.NewAPIKeyAuthenticator(keyRepo, false),
+		tenancy.NewDefaultTenantResolver(),
+		piiEngine,
+		&mockKnowledgeClient{},
+		&mockSkillsClient{},
+		&mockModelPlatform{},
+	)
+
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -301,15 +412,24 @@ func TestChatHandlerUpstreamProviderFailure(t *testing.T) {
 	usageRepo := &mockUsageRepo{dailyUsage: 0}
 	piiEngine := privacy.NewEngine()
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false)
+	authMock := auth.NewAPIKeyAuthenticator(keyRepo, false)
+	tenantMock := tenancy.NewDefaultTenantResolver()
+	knowledgeMock := &mockKnowledgeClient{}
+	skillsMock := &mockSkillsClient{}
+	modelMock := &mockModelPlatform{
+		err: errors.New("model routing failed: upstream provider is unreachable"),
+	}
 
-	// Create an invalid/unreachable upstream URL to trigger provider failure
-	os.Setenv("UPSTREAM_API_URL", "http://127.0.0.1:9999/v1/invalid-path")
-	os.Setenv("UPSTREAM_API_KEY", "some-key")
-	defer func() {
-		os.Unsetenv("UPSTREAM_API_URL")
-		os.Unsetenv("UPSTREAM_API_KEY")
-	}()
+	pipelineExecutor := runtime.NewPipelineExecutor(
+		authMock,
+		tenantMock,
+		piiEngine,
+		knowledgeMock,
+		skillsMock,
+		modelMock,
+	)
+
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -326,7 +446,6 @@ func TestChatHandlerUpstreamProviderFailure(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	// Should deny requests and return a 502 Bad Gateway on provider invocation failure
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("expected status 502, got %d. Body: %s", rr.Code, rr.Body.String())
 	}
@@ -337,55 +456,5 @@ func TestChatHandlerUpstreamProviderFailure(t *testing.T) {
 	}
 	if errResp.Error.Code != "PROVIDER_FAILURE" {
 		t.Fatalf("expected error code PROVIDER_FAILURE, got %s", errResp.Error.Code)
-	}
-}
-
-func TestChatHandlerConfigMissing(t *testing.T) {
-	rawKey := "ork_testkey123"
-	keyHash := auth.HashKey(rawKey)
-
-	keyRepo := &mockKeyRepo{
-		key: &model.RegisteredKey{
-			ID:         "test-key-id",
-			KeyHash:    keyHash,
-			DailyQuota: 10,
-			Active:     true,
-		},
-	}
-	usageRepo := &mockUsageRepo{dailyUsage: 0}
-	piiEngine := privacy.NewEngine()
-
-	// Disable sandbox fallback so it returns 500 when upstream is not configured
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false)
-
-	// Ensure upstream env is unset
-	os.Unsetenv("UPSTREAM_API_URL")
-	os.Unsetenv("UPSTREAM_API_KEY")
-
-	payload := RequestPayload{
-		Model: "gpt-4",
-		Messages: []ChatMessage{
-			{Role: "user", Content: "Hello world"},
-		},
-	}
-	body, _ := json.Marshal(payload)
-
-	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status 500, got %d", rr.Code)
-	}
-
-	var errResp APIErrorResponse
-	if err := json.NewDecoder(rr.Body).Decode(&errResp); err != nil {
-		t.Fatalf("failed to decode JSON error response: %v", err)
-	}
-	if errResp.Error.Code != "CONFIGURATION_FAILURE" {
-		t.Fatalf("expected error code CONFIGURATION_FAILURE, got %s", errResp.Error.Code)
 	}
 }
