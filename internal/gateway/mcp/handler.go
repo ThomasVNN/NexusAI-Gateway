@@ -21,10 +21,10 @@ func NewHandler(pe *privacy.Engine) *Handler {
 }
 
 type JSONRPCRequest struct {
-	JSONRPC   string          `json:"jsonrpc"`
-	ID        interface{}     `json:"id"`
-	Method    string          `json:"method"`
-	Params    json.RawMessage `json:"params,omitempty"`
+	JSONRPC string          `json:"jsonrpc"`
+	ID      interface{}     `json:"id"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
 }
 
 type JSONRPCResponse struct {

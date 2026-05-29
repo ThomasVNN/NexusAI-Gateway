@@ -6,13 +6,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/auth"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/config"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
-	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
+	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/tenancy"
 )
 
 var startTime = time.Now()
@@ -25,7 +29,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	isDbHealthy := db != nil
 	var keyRepo storage.KeyRepository
 	var usageRepo storage.UsageRepository
-	
+
 	if isDbHealthy {
 		keyRepo = *storage.NewKeyRepository(db)
 		usageRepo = *storage.NewUsageRepository(db)
@@ -35,13 +39,37 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	memStore := memory.NewStore()
 	piiEngine := privacy.NewEngine()
 
-	// 3. Handler registrations
+	// 3. Construct PipelineExecutor and Handler registrations
 	var chatHandler *handler.ChatHandler
+
+	tenantResolver := tenancy.NewDefaultTenantResolver()
+	knowledgeClient := integration.NewDefaultKnowledgeClient()
+	skillsClient := integration.NewDefaultSkillsClient()
+	modelPlatform := integration.NewDefaultModelPlatformClient()
+
 	if isDbHealthy {
-		chatHandler = handler.NewChatHandler(&keyRepo, &usageRepo, piiEngine, cfg.EnableSandboxFallback)
+		authenticator := auth.NewAPIKeyAuthenticator(&keyRepo, cfg.EnableSandboxFallback)
+		pipelineExecutor := runtime.NewPipelineExecutor(
+			authenticator,
+			tenantResolver,
+			piiEngine,
+			knowledgeClient,
+			skillsClient,
+			modelPlatform,
+		)
+		chatHandler = handler.NewChatHandler(&keyRepo, &usageRepo, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor)
 	} else {
 		// If DB is down, chat completions dynamically fall back to in-memory quota tracking
-		chatHandler = handler.NewChatHandler(memStore, memStore, piiEngine, cfg.EnableSandboxFallback)
+		authenticator := auth.NewAPIKeyAuthenticator(memStore, cfg.EnableSandboxFallback)
+		pipelineExecutor := runtime.NewPipelineExecutor(
+			authenticator,
+			tenantResolver,
+			piiEngine,
+			knowledgeClient,
+			skillsClient,
+			modelPlatform,
+		)
+		chatHandler = handler.NewChatHandler(memStore, memStore, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor)
 	}
 
 	modelHandler := handler.NewModelHandler(db)
@@ -56,8 +84,8 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	}
 
 	// OpenAI endpoints
-	mux.HandleFunc("/v1/chat/completions", chatHandler.ServeHTTP)
-	mux.HandleFunc("/v1/models", modelHandler.ServeHTTP)
+	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
+	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
 
 	// Model Context Protocol (MCP) Stream & Message Endpoints
 	mux.HandleFunc("/api/mcp/stream", mcpHandler.ServeHTTP)
@@ -67,7 +95,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux.HandleFunc("/api/admin/keys", adminHandler.HandleKeys)
 	mux.HandleFunc("/api/admin/usage", adminHandler.HandleUsage)
 	mux.HandleFunc("/api/admin/logs", adminHandler.HandleLogs)
-	
+
 	// OmniRoute UI Compatibility API Endpoints
 	mux.HandleFunc("/api/providers", adminHandler.HandleProviders)
 	mux.HandleFunc("/api/models", adminHandler.HandleModels)
@@ -138,7 +166,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		fmt.Fprintf(w, "# HELP nexusai_gateway_database_connected Database connection status (1 = connected, 0 = disconnected).\n")
 		fmt.Fprintf(w, "# TYPE nexusai_gateway_database_connected gauge\n")
 		fmt.Fprintf(w, "nexusai_gateway_database_connected %d\n", dbConnected)
-		
+
 		fmt.Fprintf(w, "# HELP nexusai_gateway_uptime_seconds Uptime of the gateway in seconds.\n")
 		fmt.Fprintf(w, "# TYPE nexusai_gateway_uptime_seconds gauge\n")
 		fmt.Fprintf(w, "nexusai_gateway_uptime_seconds %.0f\n", time.Since(startTime).Seconds())

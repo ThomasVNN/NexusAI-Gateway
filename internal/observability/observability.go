@@ -24,23 +24,26 @@ type MetricsCollector interface {
 }
 
 type NoOpSpan struct{}
-func (s *NoOpSpan) End() {}
-func (s *NoOpSpan) RecordError(err error) {}
+
+func (s *NoOpSpan) End()                                       {}
+func (s *NoOpSpan) RecordError(err error)                      {}
 func (s *NoOpSpan) SetAttribute(key string, value interface{}) {}
 
 type NoOpTracer struct{}
+
 func (t *NoOpTracer) StartSpan(ctx context.Context, name string) (context.Context, Span) {
 	return ctx, &NoOpSpan{}
 }
 
 type NoOpMetricsCollector struct{}
-func (m *NoOpMetricsCollector) IncrementCounter(name string, tags map[string]string) {}
+
+func (m *NoOpMetricsCollector) IncrementCounter(name string, tags map[string]string)                {}
 func (m *NoOpMetricsCollector) ObserveHistogram(name string, value float64, tags map[string]string) {}
 
 // Global trackers
 var (
-	GlobalTracer    Tracer           = &NoOpTracer{}
-	GlobalMetrics   MetricsCollector = &NoOpMetricsCollector{}
+	GlobalTracer  Tracer           = &NoOpTracer{}
+	GlobalMetrics MetricsCollector = &NoOpMetricsCollector{}
 )
 
 // ObserveDuration records operation timings

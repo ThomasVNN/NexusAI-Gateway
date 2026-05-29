@@ -2,7 +2,6 @@ package routing
 
 import (
 	"context"
-	"errors"
 )
 
 // RouteTarget holds information about which provider and model to dispatch a request to

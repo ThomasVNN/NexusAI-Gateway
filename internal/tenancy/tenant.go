@@ -7,11 +7,11 @@ import (
 
 // Tenant represents an isolated business unit
 type Tenant struct {
-	ID          string
-	Name        string
-	Plan        string // e.g. "free", "standard", "enterprise"
-	IsActive    bool
-	Settings    map[string]string
+	ID       string
+	Name     string
+	Plan     string // e.g. "free", "standard", "enterprise"
+	IsActive bool
+	Settings map[string]string
 }
 
 // TenantResolver defines the contract for identifying a tenant from a request
@@ -38,4 +38,26 @@ func GetTenant(ctx context.Context) (*Tenant, error) {
 		return nil, errors.New("tenant context not found")
 	}
 	return t, nil
+}
+
+// DefaultTenantResolver implements TenantResolver
+type DefaultTenantResolver struct{}
+
+// NewDefaultTenantResolver creates a new DefaultTenantResolver
+func NewDefaultTenantResolver() *DefaultTenantResolver {
+	return &DefaultTenantResolver{}
+}
+
+// Resolve identifies and returns the tenant context
+func (r *DefaultTenantResolver) Resolve(ctx context.Context, identifier string) (*Tenant, error) {
+	if identifier == "" {
+		identifier = "default-tenant"
+	}
+	return &Tenant{
+		ID:       identifier,
+		Name:     "Tenant " + identifier,
+		Plan:     "enterprise",
+		IsActive: true,
+		Settings: map[string]string{},
+	}, nil
 }
