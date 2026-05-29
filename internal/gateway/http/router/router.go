@@ -84,8 +84,8 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	}
 
 	// OpenAI endpoints
-	mux.HandleFunc("/v1/chat/completions", chatHandler.ServeHTTP)
-	mux.HandleFunc("/v1/models", modelHandler.ServeHTTP)
+	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
+	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
 
 	// Model Context Protocol (MCP) Stream & Message Endpoints
 	mux.HandleFunc("/api/mcp/stream", mcpHandler.ServeHTTP)
