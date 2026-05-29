@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexusai-gateway-config
+  namespace: nexusai
+  labels:
+    app.kubernetes.io/name: nexusai-gateway
+    app.kubernetes.io/part-of: nexusai-ecosystem
+data:
+  PORT: "20129"
+  OIDC_ISSUER: "https://auth.nexusai.local"
+  REDIS_URL: "redis://redis-nexus:6379/1"

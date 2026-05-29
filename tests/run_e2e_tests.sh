@@ -5,7 +5,7 @@ echo "=========================================================="
 echo "NexusAI-Gateway: E2E Integration and Performance Test"
 echo "=========================================================="
 
-cd /Users/thont/Local/POC/NexusAI-Gateway/deployments
+cd "$(dirname "$0")/../deployments"
 
 # 1. Clean previous state and start environment
 docker compose down -v || true

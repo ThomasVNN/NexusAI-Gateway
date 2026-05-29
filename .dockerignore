@@ -1,0 +1,34 @@
+# Version Control
+.git
+.gitignore
+.gitattributes
+
+# IDEs and OS Files
+.idea
+.vscode
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Go Build & Dependency Cache
+bin/
+pkg/
+tests/
+coverage.out
+*.test
+*.prof
+
+# Node/React Assets
+web/node_modules/
+web/dist/
+web/.cache/
+
+# Configurations and Credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key

@@ -1,7 +1,10 @@
 package router
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/config"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
@@ -11,6 +14,8 @@ import (
 	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
 )
+
+var startTime = time.Now()
 
 // New constructs the primary routing multiplexer for http traffic
 func New(db *postgres.DB, cfg *config.Config) http.Handler {
@@ -33,10 +38,10 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// 3. Handler registrations
 	var chatHandler *handler.ChatHandler
 	if isDbHealthy {
-		chatHandler = handler.NewChatHandler(&keyRepo, &usageRepo, piiEngine)
+		chatHandler = handler.NewChatHandler(&keyRepo, &usageRepo, piiEngine, cfg.EnableSandboxFallback)
 	} else {
 		// If DB is down, chat completions dynamically fall back to in-memory quota tracking
-		chatHandler = handler.NewChatHandler(memStore, memStore, piiEngine)
+		chatHandler = handler.NewChatHandler(memStore, memStore, piiEngine, cfg.EnableSandboxFallback)
 	}
 
 	modelHandler := handler.NewModelHandler(db)
@@ -45,9 +50,9 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Admin and system diagnostics mapping
 	var adminHandler *handler.AdminHandler
 	if isDbHealthy {
-		adminHandler = handler.NewAdminHandler(&keyRepo, &usageRepo, memStore, true)
+		adminHandler = handler.NewAdminHandler(&keyRepo, &usageRepo, memStore, true, cfg.InitialPassword)
 	} else {
-		adminHandler = handler.NewAdminHandler(nil, nil, memStore, false)
+		adminHandler = handler.NewAdminHandler(nil, nil, memStore, false, cfg.InitialPassword)
 	}
 
 	// OpenAI endpoints
@@ -69,8 +74,85 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux.HandleFunc("/api/provider-metrics", adminHandler.HandleUsage)
 	mux.HandleFunc("/api/system/version", adminHandler.HandleSystemVersion)
 
+	// Auth and login compatibility
+	mux.HandleFunc("/api/auth/login", adminHandler.HandleLogin)
+	mux.HandleFunc("/api/settings/require-login", adminHandler.HandleRequireLogin)
+
+	// Diagnostics & Observability endpoints
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"UP","service":"nexusai-gateway","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))))
+	})
+
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		dbStatus := "disconnected"
+		isReady := true
+
+		if db != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := db.PingContext(ctx); err == nil {
+				dbStatus = "connected"
+			} else {
+				dbStatus = "degraded"
+				if !cfg.EnableSandboxFallback {
+					isReady = false
+				}
+			}
+		} else {
+			if !cfg.EnableSandboxFallback {
+				isReady = false
+			}
+		}
+
+		statusStr := "UP"
+		statusCode := http.StatusOK
+		if !isReady {
+			statusStr = "DOWN"
+			statusCode = http.StatusServiceUnavailable
+		}
+
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			`{"status":"%s","service":"nexusai-gateway","database":"%s","sandbox_fallback_active":%t,"timestamp":"%s"}`,
+			statusStr,
+			dbStatus,
+			cfg.EnableSandboxFallback,
+			time.Now().UTC().Format(time.RFC3339),
+		)))
+	})
+
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		dbConnected := 0
+		if db != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 1*time.Second)
+			defer cancel()
+			if err := db.PingContext(ctx); err == nil {
+				dbConnected = 1
+			}
+		}
+
+		fmt.Fprintf(w, "# HELP nexusai_gateway_database_connected Database connection status (1 = connected, 0 = disconnected).\n")
+		fmt.Fprintf(w, "# TYPE nexusai_gateway_database_connected gauge\n")
+		fmt.Fprintf(w, "nexusai_gateway_database_connected %d\n", dbConnected)
+		
+		fmt.Fprintf(w, "# HELP nexusai_gateway_uptime_seconds Uptime of the gateway in seconds.\n")
+		fmt.Fprintf(w, "# TYPE nexusai_gateway_uptime_seconds gauge\n")
+		fmt.Fprintf(w, "nexusai_gateway_uptime_seconds %.0f\n", time.Since(startTime).Seconds())
+	})
+
 	// Single Page Application static server
 	RegisterStaticRoutes(mux)
 
-	return mux
+	// Wrap routing stack in our production-grade middleware layers
+	return WithRecovery(
+		WithCorrelationID(
+			WithStructuredLogging(
+				WithRateLimiting(mux),
+			),
+		),
+	)
 }

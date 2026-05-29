@@ -10,6 +10,9 @@ services:
       - "20130:20129"
     environment:
       - PORT=20129
+      - APP_ENV=development
+      - ENABLE_SANDBOX_FALLBACK=true
+      - INITIAL_PASSWORD=admin
       - DATABASE_URL=postgres://postgres:postgres_secure_pass@postgres-nexus:5432/nexusai_gateway?sslmode=disable
       - REDIS_URL=redis://redis-nexus:6379/1
       - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

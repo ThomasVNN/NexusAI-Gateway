@@ -3,10 +3,10 @@ package handler
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -18,16 +18,18 @@ import (
 )
 
 type ChatHandler struct {
-	keyRepo   repository.KeyRepository
-	usageRepo repository.UsageRepository
-	piiEngine *privacy.Engine
+	keyRepo               repository.KeyRepository
+	usageRepo             repository.UsageRepository
+	piiEngine             *privacy.Engine
+	enableSandboxFallback bool
 }
 
-func NewChatHandler(kr repository.KeyRepository, ur repository.UsageRepository, pe *privacy.Engine) *ChatHandler {
+func NewChatHandler(kr repository.KeyRepository, ur repository.UsageRepository, pe *privacy.Engine, enableSandboxFallback bool) *ChatHandler {
 	return &ChatHandler{
-		keyRepo:   kr,
-		usageRepo: ur,
-		piiEngine: pe,
+		keyRepo:               kr,
+		usageRepo:             ur,
+		piiEngine:             pe,
+		enableSandboxFallback: enableSandboxFallback,
 	}
 }
 
@@ -55,34 +57,59 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
 	rawKey, err := auth.ParseKey(authHeader)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Unauthorized: %v", err), http.StatusUnauthorized)
+		LogSecurityEvent(r, "WARN", "Authentication failed due to malformed or missing key", "authentication_failed", err.Error())
+		WriteError(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", fmt.Sprintf("Unauthorized: %v", err))
 		return
 	}
 
 	keyHash := auth.HashKey(rawKey)
 	key, err := h.keyRepo.GetByHash(r.Context(), keyHash)
 	if err != nil {
-		// Fallback mock key for local architectural sandbox if DB is empty
-		key = &model.RegisteredKey{
-			ID:          "mock-local-key",
-			KeyHash:     keyHash,
-			Name:        "Default Sandbox Key",
-			SourceApp:   "sandbox",
-			DailyQuota:  1000,
-			HourlyQuota: 200,
-			Active:      true,
+		// Distinguish between API key not found and actual system/datastore failure
+		isNotFound := err == sql.ErrNoRows || err.Error() == "key not found by hash"
+
+		if isNotFound {
+			if h.enableSandboxFallback {
+				LogSecurityEvent(r, "WARN", "API key not found, using sandbox fallback key", "sandbox_fallback_activated", "key hash not found in datastore")
+				key = &model.RegisteredKey{
+					ID:          "mock-local-key",
+					KeyHash:     keyHash,
+					Name:        "Default Sandbox Key",
+					SourceApp:   "sandbox",
+					DailyQuota:  1000,
+					HourlyQuota: 200,
+					Active:      true,
+				}
+			} else {
+				LogSecurityEvent(r, "WARN", "Authentication failed: API key not found", "authentication_failed", "key hash not found in datastore")
+				WriteError(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", "Unauthorized: Invalid API key")
+				return
+			}
+		} else {
+			// Infrastructure/datastore lookup failure - fail closed!
+			LogSecurityEvent(r, "ERROR", "Authentication failed: Datastore unavailable", "datastore_failure", err.Error())
+			WriteError(w, http.StatusServiceUnavailable, "INFRASTRUCTURE_FAILURE", "Service Unavailable: Authentication datastore is currently offline")
+			return
 		}
 	}
 
 	if !key.Active {
-		http.Error(w, "Forbidden: API key is deactivated", http.StatusForbidden)
+		LogSecurityEvent(r, "WARN", "Authorization failed: API key is deactivated", "authorization_failed", fmt.Sprintf("Key ID %s is deactivated", key.ID))
+		WriteError(w, http.StatusForbidden, "AUTHORIZATION_FAILED", "Forbidden: API key is deactivated")
 		return
 	}
 
 	// 2. Enforce Daily & Hourly Quotas
 	dailyUsage, err := h.usageRepo.GetDailyUsage(r.Context(), key.ID)
-	if err == nil && dailyUsage >= key.DailyQuota {
-		http.Error(w, "Too Many Requests: Daily quota limit exceeded", http.StatusTooManyRequests)
+	if err != nil {
+		// Log datastore failure and deny request (fail closed)
+		LogSecurityEvent(r, "ERROR", "Quota verification failed: Datastore unavailable", "datastore_failure", err.Error())
+		WriteError(w, http.StatusServiceUnavailable, "INFRASTRUCTURE_FAILURE", "Service Unavailable: Quota check datastore is offline")
+		return
+	}
+	if dailyUsage >= key.DailyQuota {
+		LogSecurityEvent(r, "WARN", "Quota limit exceeded", "quota_exceeded", fmt.Sprintf("Key ID %s has daily usage %d / daily quota %d", key.ID, dailyUsage, key.DailyQuota))
+		WriteError(w, http.StatusTooManyRequests, "QUOTA_EXCEEDED", "Too Many Requests: Daily quota limit exceeded")
 		return
 	}
 
@@ -92,13 +119,13 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 4. Parse & Redact Prompt (PII scrubbing)
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Bad Request: Failed to read request body", http.StatusBadRequest)
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Bad Request: Failed to read request body")
 		return
 	}
 
 	var payload RequestPayload
 	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
-		http.Error(w, "Bad Request: Invalid JSON payload", http.StatusBadRequest)
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Bad Request: Invalid JSON payload")
 		return
 	}
 
@@ -119,7 +146,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_SERVER_ERROR", "Streaming unsupported")
 		return
 	}
 
@@ -136,43 +163,58 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		req, err := http.NewRequestWithContext(ctx, "POST", upstreamURL, bytes.NewReader(sanitizedBytes))
 		if err != nil {
-			log.Printf("Upstream request creation failed: %v", err)
-			h.executeMockFallbackStream(w, flusher, payload.Model)
-			completionTokensEstimate = 50
-		} else {
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+upstreamKey)
-			req.Header.Set("Accept", "text/event-stream")
+			LogSecurityEvent(r, "ERROR", "Upstream request creation failed", "provider_failure", err.Error())
+			WriteError(w, http.StatusBadGateway, "PROVIDER_FAILURE", "Bad Gateway: Failed to construct upstream request")
+			return
+		}
 
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil || resp.StatusCode != http.StatusOK {
-				log.Printf("Upstream invocation failed, falling back to mock stream: %v", err)
-				h.executeMockFallbackStream(w, flusher, payload.Model)
-				completionTokensEstimate = 50
-			} else {
-				defer resp.Body.Close()
-				buffer := make([]byte, 1024)
-				for {
-					n, err := resp.Body.Read(buffer)
-					if n > 0 {
-						_, _ = w.Write(buffer[:n])
-						flusher.Flush()
-						completionTokensEstimate += n / 10 // Simple token estimation from raw SSE stream length
-					}
-					if err == io.EOF {
-						break
-					}
-					if err != nil {
-						break
-					}
-				}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+upstreamKey)
+		req.Header.Set("Accept", "text/event-stream")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			LogSecurityEvent(r, "ERROR", "Upstream provider invocation failed: network or timeout error", "provider_failure", err.Error())
+			WriteError(w, http.StatusBadGateway, "PROVIDER_FAILURE", "Bad Gateway: Upstream provider is currently unreachable")
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			bodyErr, _ := io.ReadAll(resp.Body)
+			LogSecurityEvent(r, "ERROR", fmt.Sprintf("Upstream provider returned non-OK status: %d", resp.StatusCode), "provider_failure", string(bodyErr))
+			WriteError(w, http.StatusBadGateway, "PROVIDER_FAILURE", fmt.Sprintf("Bad Gateway: Upstream provider failed with status %d", resp.StatusCode))
+			return
+		}
+
+		buffer := make([]byte, 1024)
+		for {
+			n, err := resp.Body.Read(buffer)
+			if n > 0 {
+				_, _ = w.Write(buffer[:n])
+				flusher.Flush()
+				completionTokensEstimate += n / 10 // Simple token estimation from SSE stream length
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				LogSecurityEvent(r, "ERROR", "Stream read error from upstream provider", "provider_failure", err.Error())
+				break
 			}
 		}
 	} else {
-		// Fallback to internal high-performance Mock Stream
-		h.executeMockFallbackStream(w, flusher, payload.Model)
-		completionTokensEstimate = 50
+		// If upstream is not configured, we only allow mock stream if sandbox fallback is explicitly enabled!
+		if h.enableSandboxFallback {
+			// Fallback to internal high-performance Mock Stream
+			h.executeMockFallbackStream(w, flusher, payload.Model)
+			completionTokensEstimate = 50
+		} else {
+			LogSecurityEvent(r, "ERROR", "Upstream provider is not configured", "configuration_failure", "UPSTREAM_API_URL or UPSTREAM_API_KEY is empty")
+			WriteError(w, http.StatusInternalServerError, "CONFIGURATION_FAILURE", "Internal Server Error: Downstream AI provider is not configured")
+			return
+		}
 	}
 
 	// 6. Log Usage Record Async
