@@ -10,15 +10,16 @@ import (
 
 // Config holds all environmental configurations for the application
 type Config struct {
-	Port            string
-	PostgresURL     string
-	RedisURL        string
-	JWKSPrivate     string
-	OIDCIssuer      string
-	InitialPassword string
-	AppEnv          string // local, development, staging, production
-	UpstreamAPIURL  string
-	UpstreamAPIKey  string
+	Port                 string
+	PostgresURL          string
+	RedisURL             string
+	JWKSPrivate          string
+	OIDCIssuer           string
+	InitialPassword      string
+	AppEnv               string // local, development, staging, production
+	UpstreamAPIURL       string
+	UpstreamAPIKey      string
+	EnableSandboxFallback bool
 }
 
 // UnsafeDefaults contains known unsafe default values for detection
@@ -63,15 +64,23 @@ func Load() *Config {
 	upstreamAPIURL := os.Getenv("UPSTREAM_API_URL")
 	upstreamAPIKey := os.Getenv("UPSTREAM_API_KEY")
 
+	// Enable sandbox fallback for local/development environments when DB is unavailable
+	enableSandboxFallback := os.Getenv("ENABLE_SANDBOX_FALLBACK") == "true"
+	// Also enable in development environment by default
+	if appEnv == "development" || appEnv == "local" {
+		enableSandboxFallback = true
+	}
+
 	return &Config{
-		Port:            port,
-		PostgresURL:     postgresURL,
-		RedisURL:        redisURL,
-		OIDCIssuer:      oidcIssuer,
-		InitialPassword: initialPassword,
-		AppEnv:          appEnv,
-		UpstreamAPIURL:  upstreamAPIURL,
-		UpstreamAPIKey:  upstreamAPIKey,
+		Port:                   port,
+		PostgresURL:            postgresURL,
+		RedisURL:               redisURL,
+		OIDCIssuer:             oidcIssuer,
+		InitialPassword:        initialPassword,
+		AppEnv:                 appEnv,
+		UpstreamAPIURL:         upstreamAPIURL,
+		UpstreamAPIKey:         upstreamAPIKey,
+		EnableSandboxFallback:  enableSandboxFallback,
 	}
 }
 

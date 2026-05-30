@@ -27,12 +27,12 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 
 	// 1. Initialize repositories
 	isDbHealthy := db != nil
-	var keyRepo storage.KeyRepository
-	var usageRepo storage.UsageRepository
+	var keyRepo *storage.KeyRepository
+	var usageRepo *storage.UsageRepository
 
 	if isDbHealthy {
-		keyRepo = *storage.NewKeyRepository(db)
-		usageRepo = *storage.NewUsageRepository(db)
+		keyRepo = storage.NewKeyRepository(db)
+		usageRepo = storage.NewUsageRepository(db)
 	}
 
 	// 2. Initialize in-memory fail-safe Store
@@ -48,7 +48,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	modelPlatform := integration.NewDefaultModelPlatformClient()
 
 	if isDbHealthy {
-		authenticator := auth.NewAPIKeyAuthenticator(&keyRepo, cfg.EnableSandboxFallback)
+		authenticator := auth.NewAPIKeyAuthenticator(keyRepo)
 		pipelineExecutor := runtime.NewPipelineExecutor(
 			authenticator,
 			tenantResolver,
@@ -57,10 +57,10 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 			skillsClient,
 			modelPlatform,
 		)
-		chatHandler = handler.NewChatHandler(&keyRepo, &usageRepo, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor)
+		chatHandler = handler.NewChatHandler(keyRepo, usageRepo, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor)
 	} else {
 		// If DB is down, chat completions dynamically fall back to in-memory quota tracking
-		authenticator := auth.NewAPIKeyAuthenticator(memStore, cfg.EnableSandboxFallback)
+		authenticator := auth.NewAPIKeyAuthenticator(memStore)
 		pipelineExecutor := runtime.NewPipelineExecutor(
 			authenticator,
 			tenantResolver,
@@ -78,7 +78,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Admin and system diagnostics mapping
 	var adminHandler *handler.AdminHandler
 	if isDbHealthy {
-		adminHandler = handler.NewAdminHandler(&keyRepo, &usageRepo, memStore, true, cfg.InitialPassword)
+		adminHandler = handler.NewAdminHandler(keyRepo, usageRepo, memStore, true, cfg.InitialPassword)
 	} else {
 		adminHandler = handler.NewAdminHandler(nil, nil, memStore, false, cfg.InitialPassword)
 	}
