@@ -10,16 +10,25 @@ import (
 
 // Config holds all environmental configurations for the application
 type Config struct {
-	Port                  string
-	PostgresURL           string
-	RedisURL              string
-	JWKSPrivate           string
-	OIDCIssuer            string
-	InitialPassword       string
-	AppEnv                string // local, development, staging, production
-	EnableSandboxFallback bool
-	UpstreamAPIURL        string
-	UpstreamAPIKey        string
+	Port            string
+	PostgresURL     string
+	RedisURL        string
+	JWKSPrivate     string
+	OIDCIssuer      string
+	InitialPassword string
+	AppEnv          string // local, development, staging, production
+	UpstreamAPIURL  string
+	UpstreamAPIKey  string
+}
+
+// UnsafeDefaults contains known unsafe default values for detection
+var UnsafeDefaults = []string{
+	"postgres_secure_pass",
+	"admin",
+	"mock-key-for-local-dev",
+	"change-me-before-production",
+	"password",
+	"secret",
 }
 
 // Load reads all configurations from environment variables and sets defaults
@@ -29,50 +38,40 @@ func Load() *Config {
 		port = "20129"
 	}
 
-	postgresURL := os.Getenv("DATABASE_URL")
-	if postgresURL == "" {
-		postgresURL = "postgres://postgres:postgres_secure_pass@postgres-nexus:5432/nexusai_gateway?sslmode=disable"
-	}
-
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		redisURL = "redis://redis-nexus:6379/1"
-	}
-
-	oidcIssuer := os.Getenv("OIDC_ISSUER")
-	if oidcIssuer == "" {
-		oidcIssuer = "http://localhost:20129"
-	}
-
+	// SECURITY: No default password - must be provided via environment variable
 	initialPassword := os.Getenv("INITIAL_PASSWORD")
 	if initialPassword == "" {
 		initialPassword = os.Getenv("OMNIROUTE_ADMIN_KEY")
 	}
-	if initialPassword == "" {
-		initialPassword = "postgres_secure_pass" // fallback
-	}
+	// Note: Password validation happens in Validate() for production environments
 
 	appEnv := strings.ToLower(os.Getenv("APP_ENV"))
 	if appEnv == "" {
 		appEnv = "development"
 	}
 
-	enableSandboxFallbackStr := os.Getenv("ENABLE_SANDBOX_FALLBACK")
-	enableSandboxFallback, _ := strconv.ParseBool(enableSandboxFallbackStr)
+	// SECURITY: Only load database URL from env - no hardcoded credentials
+	postgresURL := os.Getenv("DATABASE_URL")
+
+	redisURL := os.Getenv("REDIS_URL")
+
+	oidcIssuer := os.Getenv("OIDC_ISSUER")
+	if oidcIssuer == "" {
+		oidcIssuer = "http://localhost:20129"
+	}
 
 	upstreamAPIURL := os.Getenv("UPSTREAM_API_URL")
 	upstreamAPIKey := os.Getenv("UPSTREAM_API_KEY")
 
 	return &Config{
-		Port:                  port,
-		PostgresURL:           postgresURL,
-		RedisURL:              redisURL,
-		OIDCIssuer:            oidcIssuer,
-		InitialPassword:       initialPassword,
-		AppEnv:                appEnv,
-		EnableSandboxFallback: enableSandboxFallback,
-		UpstreamAPIURL:        upstreamAPIURL,
-		UpstreamAPIKey:        upstreamAPIKey,
+		Port:            port,
+		PostgresURL:     postgresURL,
+		RedisURL:        redisURL,
+		OIDCIssuer:      oidcIssuer,
+		InitialPassword: initialPassword,
+		AppEnv:          appEnv,
+		UpstreamAPIURL:  upstreamAPIURL,
+		UpstreamAPIKey:  upstreamAPIKey,
 	}
 }
 
@@ -94,17 +93,16 @@ func (c *Config) Validate() error {
 
 	// In production or staging, enforce strict checks
 	if c.AppEnv == "production" || c.AppEnv == "staging" {
-		// No fallback administrative password or empty password allowed
-		if c.InitialPassword == "" ||
-			c.InitialPassword == "postgres_secure_pass" ||
-			c.InitialPassword == "admin" ||
-			c.InitialPassword == "mock-key-for-local-dev" ||
-			c.InitialPassword == "change-me-before-production" {
-			return fmt.Errorf("unsafe default or empty administrative password (INITIAL_PASSWORD) is not allowed in %s environment", c.AppEnv)
+		// SECURITY: No fallback administrative password allowed - must be provided
+		if c.InitialPassword == "" {
+			return fmt.Errorf("administrative password (INITIAL_PASSWORD) is required in %s environment", c.AppEnv)
 		}
 
-		if c.EnableSandboxFallback {
-			return fmt.Errorf("sandbox fallback authentication (ENABLE_SANDBOX_FALLBACK) must be disabled in %s environment", c.AppEnv)
+		// Check against known unsafe defaults
+		for _, unsafe := range UnsafeDefaults {
+			if c.InitialPassword == unsafe {
+				return fmt.Errorf("unsafe default administrative password (INITIAL_PASSWORD) is not allowed in %s environment", c.AppEnv)
+			}
 		}
 
 		if c.PostgresURL == "" {
@@ -119,10 +117,16 @@ func (c *Config) Validate() error {
 		if u.Host == "localhost:5432" || u.Host == "127.0.0.1:5432" {
 			return fmt.Errorf("unsafe default host in DATABASE_URL for %s environment", c.AppEnv)
 		}
+
+		// Check for unsafe password in database URL
 		if u.User != nil {
 			pwd, set := u.User.Password()
-			if set && pwd == "postgres_secure_pass" {
-				return fmt.Errorf("unsafe default credential in DATABASE_URL for %s environment", c.AppEnv)
+			if set {
+				for _, unsafe := range UnsafeDefaults {
+					if pwd == unsafe {
+						return fmt.Errorf("unsafe default credential in DATABASE_URL for %s environment", c.AppEnv)
+					}
+				}
 			}
 		}
 
@@ -138,4 +142,24 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// GetEnvironment returns the current environment without exposing internal state
+func (c *Config) GetEnvironment() string {
+	return c.AppEnv
+}
+
+// IsProduction returns true if running in production environment
+func (c *Config) IsProduction() bool {
+	return c.AppEnv == "production"
+}
+
+// ValidateNoUnsafeDefaults checks if a value matches any known unsafe default
+func ValidateNoUnsafeDefaults(value string) bool {
+	for _, unsafe := range UnsafeDefaults {
+		if value == unsafe {
+			return false
+		}
+	}
+	return true
 }

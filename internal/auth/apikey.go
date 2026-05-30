@@ -40,16 +40,23 @@ func ParseKey(authHeader string) (string, error) {
 
 // APIKeyAuthenticator implements Authenticator using KeyRepository
 type APIKeyAuthenticator struct {
-	KeyRepo               repository.KeyRepository
-	EnableSandboxFallback bool
+	KeyRepo repository.KeyRepository
+	// TestKeys is an allowlist of known test API key hashes for testing environments.
+	// If populated, only these specific keys will be accepted in non-production.
+	TestKeys map[string]bool
 }
 
 // NewAPIKeyAuthenticator creates a new APIKeyAuthenticator
-func NewAPIKeyAuthenticator(kr repository.KeyRepository, enableSandboxFallback bool) *APIKeyAuthenticator {
+func NewAPIKeyAuthenticator(kr repository.KeyRepository) *APIKeyAuthenticator {
 	return &APIKeyAuthenticator{
-		KeyRepo:               kr,
-		EnableSandboxFallback: enableSandboxFallback,
+		KeyRepo:  kr,
+		TestKeys: make(map[string]bool),
 	}
+}
+
+// AddTestKey adds a test API key to the allowlist (only for testing environments)
+func (a *APIKeyAuthenticator) AddTestKey(testKey string) {
+	a.TestKeys[HashKey(testKey)] = true
 }
 
 // Authenticate verifies the token and returns the user identity
@@ -60,17 +67,26 @@ func (a *APIKeyAuthenticator) Authenticate(ctx context.Context, token string) (*
 	}
 
 	keyHash := HashKey(rawKey)
+
+	// SECURITY: Check allowlist first (only for explicitly approved test keys)
+	if len(a.TestKeys) > 0 {
+		if a.TestKeys[keyHash] {
+			return &UserIdentity{
+				ID:       "test-key",
+				TenantID: "test-tenant",
+				Roles:    []string{"test"},
+			}, nil
+		}
+		// Test keys configured but this key is not in allowlist - reject
+		return nil, fmt.Errorf("invalid API key")
+	}
+
+	// Normal authentication flow - look up key in database
 	key, err := a.KeyRepo.GetByHash(ctx, keyHash)
 	if err != nil {
 		isNotFound := err == sql.ErrNoRows || err.Error() == "key not found by hash"
 		if isNotFound {
-			if a.EnableSandboxFallback {
-				return &UserIdentity{
-					ID:       "mock-local-key",
-					TenantID: "default-sandbox-tenant",
-					Roles:    []string{"sandbox"},
-				}, nil
-			}
+			// SECURITY: Always reject unknown keys - no fallback authentication
 			return nil, fmt.Errorf("invalid API key")
 		}
 		return nil, fmt.Errorf("authentication database failure: %w", err)
