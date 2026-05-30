@@ -13,6 +13,7 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/quota"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
 	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
@@ -39,10 +40,20 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	memStore := memory.NewStore()
 	piiEngine := privacy.NewEngine()
 
-	// 3. Construct PipelineExecutor and Handler registrations
+	// 3. Initialize tenant components
+	var tenantResolver tenancy.TenantResolver
+	if isDbHealthy {
+		tenantResolver = tenancy.NewPostgresTenantResolver(db)
+	} else {
+		tenantResolver = tenancy.NewDefaultTenantResolver()
+	}
+
+	// 4. Initialize rate limiter and quota manager
+	rateLimiter := quota.NewTenantRateLimiter()
+
+	// 5. Construct PipelineExecutor and Handler registrations
 	var chatHandler *handler.ChatHandler
 
-	tenantResolver := tenancy.NewDefaultTenantResolver()
 	knowledgeClient := integration.NewDefaultKnowledgeClient()
 	skillsClient := integration.NewDefaultSkillsClient()
 	modelPlatform := integration.NewDefaultModelPlatformClient()
@@ -175,11 +186,26 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Single Page Application static server
 	RegisterStaticRoutes(mux)
 
+	// Create authenticator for tenant middleware
+	var authenticator auth.Authenticator
+	if isDbHealthy {
+		authenticator = auth.NewAPIKeyAuthenticator(keyRepo)
+	} else {
+		authenticator = auth.NewAPIKeyAuthenticator(memStore)
+	}
+
+	// Create tenant-aware handler chain
+	tenantHandler := WithTenantResolution(tenantResolver, authenticator)(mux)
+
 	// Wrap routing stack in our production-grade middleware layers
 	return WithRecovery(
-		WithCorrelationID(
-			WithStructuredLogging(
-				WithRateLimiting(mux),
+		WithSecurityHeaders(
+			WithCORS(cfg.CORSAllowedOrigins)(
+				WithCorrelationID(
+					WithStructuredLogging(
+						WithRateLimiting(tenantHandler),
+					),
+				),
 			),
 		),
 	)
