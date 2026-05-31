@@ -6,30 +6,34 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/auth"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/domain/model"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/domain/repository"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/routing"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
 )
 
 type AdminHandler struct {
-	keyRepo       repository.KeyRepository
-	usageRepo     repository.UsageRepository
-	memStore      *memory.Store
-	isDbHealthy   bool
-	adminPassword string
+	keyRepo         repository.KeyRepository
+	usageRepo       repository.UsageRepository
+	memStore        *memory.Store
+	modelConfigRepo *routing.ModelConfigRepository
+	isDbHealthy     bool
+	adminPassword   string
 }
 
-func NewAdminHandler(kr repository.KeyRepository, ur repository.UsageRepository, ms *memory.Store, isDbHealthy bool, adminPassword string) *AdminHandler {
+func NewAdminHandler(kr repository.KeyRepository, ur repository.UsageRepository, ms *memory.Store, mcr *routing.ModelConfigRepository, isDbHealthy bool, adminPassword string) *AdminHandler {
 	return &AdminHandler{
-		keyRepo:       kr,
-		usageRepo:     ur,
-		memStore:      ms,
-		isDbHealthy:   isDbHealthy,
-		adminPassword: adminPassword,
+		keyRepo:         kr,
+		usageRepo:       ur,
+		memStore:        ms,
+		modelConfigRepo: mcr,
+		isDbHealthy:     isDbHealthy,
+		adminPassword:   adminPassword,
 	}
 }
 
@@ -230,12 +234,62 @@ func (h *AdminHandler) HandleProviders(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) HandleModels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tenantID := r.Header.Get("X-Tenant-ID")
+	if tenantID == "" {
+		tenantID = "default"
+	}
+
+	// Query models from database if available
+	if h.isDbHealthy && h.modelConfigRepo != nil {
+		configs, err := h.modelConfigRepo.GetModelsForTenant(r.Context(), tenantID)
+		if err != nil {
+			slog.Warn("Failed to fetch models from database, using fallback", slog.Any("error", err))
+			h.sendFallbackModels(w)
+			return
+		}
+
+		if len(configs) > 0 {
+			models := make([]map[string]interface{}, 0, len(configs))
+			for _, cfg := range configs {
+				models = append(models, map[string]interface{}{
+					"id":                 cfg.ID,
+					"name":               cfg.Name,
+					"provider":           cfg.ProviderID,
+					"endpoint":           cfg.Endpoint,
+					"cost_per_1k_input":  cfg.CostPer1KInput,
+					"cost_per_1k_output": cfg.CostPer1KOutput,
+					"max_tokens":         cfg.MaxTokens,
+					"capabilities":       cfg.Capabilities,
+					"active":             cfg.IsActive,
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"models": models})
+			return
+		}
+	}
+
+	// Fallback to default models if no DB or no configs found
+	h.sendFallbackModels(w)
+}
+
+func (h *AdminHandler) sendFallbackModels(w http.ResponseWriter) {
+	// Default models when no database config exists
+	fallbackModels := []map[string]interface{}{
+		{"id": "gpt-4o", "name": "GPT-4o (OpenAI)", "provider": "openai"},
+		{"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "provider": "anthropic"},
+		{"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "provider": "google"},
+		{"id": "gpt-4o-mini", "name": "GPT-4o Mini", "provider": "openai"},
+		{"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku", "provider": "anthropic"},
+	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"models": []map[string]interface{}{
-			{"id": "gpt-4", "name": "GPT-4 (OpenAI)", "provider": "openai"},
-			{"id": "claude-3-5-sonnet", "name": "Claude 3.5 Sonnet", "provider": "anthropic"},
-			{"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "provider": "google"},
-		},
+		"models": fallbackModels,
+		"source": "fallback",
 	})
 }
 

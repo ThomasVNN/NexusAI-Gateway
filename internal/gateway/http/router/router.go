@@ -19,6 +19,7 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/ratelimit"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/routing"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
 	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
@@ -85,10 +86,12 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 
 	// Admin and system diagnostics mapping
 	var adminHandler *handler.AdminHandler
+	var modelConfigRepo *routing.ModelConfigRepository
 	if isDbHealthy {
-		adminHandler = handler.NewAdminHandler(keyRepo, usageRepo, memStore, true, cfg.InitialPassword)
+		modelConfigRepo = routing.NewModelConfigRepository(db)
+		adminHandler = handler.NewAdminHandler(keyRepo, usageRepo, memStore, modelConfigRepo, true, cfg.InitialPassword)
 	} else {
-		adminHandler = handler.NewAdminHandler(nil, nil, memStore, false, cfg.InitialPassword)
+		adminHandler = handler.NewAdminHandler(nil, nil, memStore, nil, false, cfg.InitialPassword)
 	}
 
 	// 4. Initialize rate limiting
