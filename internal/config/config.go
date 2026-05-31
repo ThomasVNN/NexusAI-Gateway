@@ -18,8 +18,9 @@ type Config struct {
 	InitialPassword      string
 	AppEnv               string // local, development, staging, production
 	UpstreamAPIURL       string
-	UpstreamAPIKey      string
+	UpstreamAPIKey       string
 	EnableSandboxFallback bool
+	CORSAllowedOrigins   []string
 }
 
 // UnsafeDefaults contains known unsafe default values for detection
@@ -71,6 +72,18 @@ func Load() *Config {
 		enableSandboxFallback = true
 	}
 
+	// CORS allowed origins - comma-separated list
+	corsOriginsEnv := os.Getenv("CORS_ALLOWED_ORIGINS")
+	var corsOrigins []string
+	if corsOriginsEnv != "" {
+		for _, origin := range strings.Split(corsOriginsEnv, ",") {
+			origin = strings.TrimSpace(origin)
+			if origin != "" {
+				corsOrigins = append(corsOrigins, origin)
+			}
+		}
+	}
+
 	return &Config{
 		Port:                   port,
 		PostgresURL:            postgresURL,
@@ -81,6 +94,7 @@ func Load() *Config {
 		UpstreamAPIURL:         upstreamAPIURL,
 		UpstreamAPIKey:         upstreamAPIKey,
 		EnableSandboxFallback:  enableSandboxFallback,
+		CORSAllowedOrigins:     corsOrigins,
 	}
 }
 
