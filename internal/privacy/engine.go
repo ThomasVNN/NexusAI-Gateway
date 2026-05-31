@@ -27,12 +27,12 @@ type RedactionRule struct {
 
 // FilterConfig holds the configuration for the redaction engine
 type FilterConfig struct {
-	DefaultMarker   string
-	Level           RedactionLevel
-	Rules           map[PIIType]RedactionRule
-	MaxRedactions   int
-	PreserveFormat  bool
-	CaseSensitive   bool
+	DefaultMarker  string
+	Level          RedactionLevel
+	Rules          map[PIIType]RedactionRule
+	MaxRedactions  int
+	PreserveFormat bool
+	CaseSensitive  bool
 }
 
 // DefaultFilterConfig returns the standard filter configuration
@@ -42,33 +42,33 @@ func DefaultFilterConfig() *FilterConfig {
 		Level:         RedactionLevelStandard,
 		Rules: map[PIIType]RedactionRule{
 			PIITypeEmail: {
-				Type:    PIITypeEmail,
-				Marker:  "[REDACTED_EMAIL]",
-				Enabled: true,
+				Type:     PIITypeEmail,
+				Marker:   "[REDACTED_EMAIL]",
+				Enabled:  true,
 				CountCap: 50,
 			},
 			PIITypePhone: {
-				Type:    PIITypePhone,
-				Marker:  "[REDACTED_PHONE]",
-				Enabled: true,
+				Type:     PIITypePhone,
+				Marker:   "[REDACTED_PHONE]",
+				Enabled:  true,
 				CountCap: 50,
 			},
 			PIITypeSSN: {
-				Type:    PIITypeSSN,
-				Marker:  "[REDACTED_SSN]",
-				Enabled: true,
+				Type:     PIITypeSSN,
+				Marker:   "[REDACTED_SSN]",
+				Enabled:  true,
 				CountCap: 10,
 			},
 			PIITypeCreditCard: {
-				Type:    PIITypeCreditCard,
-				Marker:  "[REDACTED_CARD]",
-				Enabled: true,
+				Type:     PIITypeCreditCard,
+				Marker:   "[REDACTED_CARD]",
+				Enabled:  true,
 				CountCap: 10,
 			},
 			PIITypeIPAddress: {
-				Type:    PIITypeIPAddress,
-				Marker:  "[REDACTED_IP]",
-				Enabled: true,
+				Type:     PIITypeIPAddress,
+				Marker:   "[REDACTED_IP]",
+				Enabled:  true,
 				CountCap: 50,
 			},
 		},
@@ -126,17 +126,6 @@ func (e *Engine) Redact(text string) string {
 		marker := rule.Marker
 		if marker == "" {
 			marker = e.config.DefaultMarker
-		}
-
-		replacer := func(match string) string {
-			if rule.CountCap > 0 && totalRedactions >= e.config.MaxRedactions {
-				return match
-			}
-			if rule.CountCap > 0 {
-				// Check per-type count by tracking redaction count
-				totalRedactions++
-			}
-			return marker
 		}
 
 		if e.config.CaseSensitive {
@@ -298,6 +287,17 @@ func (e *Engine) SetMarker(piiType PIIType, marker string) {
 		rule.Marker = marker
 		e.config.Rules[piiType] = rule
 	}
+}
+
+// GetMarker returns the current marker for a specific PII type
+func (e *Engine) GetMarker(piiType PIIType) string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if rule, ok := e.config.Rules[piiType]; ok {
+		return rule.Marker
+	}
+	return e.config.DefaultMarker
 }
 
 // SetLevel sets the redaction level

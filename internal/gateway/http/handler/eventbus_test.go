@@ -8,20 +8,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/eventbus"
 )
 
 // MockEventBus implements eventbus.Bus for testing
 type MockEventBus struct {
-	publishedEvents   []*eventbus.Event
-	subscriptions     map[string]*eventbus.Subscription
-	dlqEntries        map[string]*eventbus.DLQEntry
-	healthError       error
-	publishError      error
-	subscribeError    error
-	unsubscribeError  error
+	publishedEvents  []*eventbus.Event
+	subscriptions    map[string]*eventbus.Subscription
+	dlqEntries       map[string]*eventbus.DLQEntry
+	healthError      error
+	publishError     error
+	subscribeError   error
+	unsubscribeError error
 }
 
 func NewMockEventBus() *MockEventBus {
@@ -107,7 +106,7 @@ func TestEventHandlerPublish(t *testing.T) {
 		handler := NewEventHandler(mockBus)
 
 		payload := map[string]interface{}{
-			"action": "create",
+			"action":   "create",
 			"resource": "/users",
 		}
 		payloadBytes, _ := json.Marshal(payload)
@@ -317,8 +316,8 @@ func TestEventHandlerGetSubscriptions(t *testing.T) {
 	t.Run("returns client subscriptions", func(t *testing.T) {
 		mockBus := NewMockEventBus()
 		mockBus.subscriptions["sub-1"] = &eventbus.Subscription{
-			ID:        "sub-1",
-			ClientID:  "client-1",
+			ID:         "sub-1",
+			ClientID:   "client-1",
 			EventTypes: []eventbus.EventType{eventbus.EventTypeIntent},
 		}
 		handler := NewEventHandler(mockBus)
@@ -401,7 +400,7 @@ func TestEventHandlerRetryDLQEntry(t *testing.T) {
 	t.Run("retries DLQ entry", func(t *testing.T) {
 		mockBus := NewMockEventBus()
 		mockBus.dlqEntries["entry-1"] = &eventbus.DLQEntry{
-			ID:        "entry-1",
+			ID:         "entry-1",
 			RetryCount: 0,
 			MaxRetries: 3,
 		}

@@ -172,18 +172,3 @@ func (r *PostgresTenantResolver) resolveByDefault(ctx context.Context) (*Tenant,
 	tenant.OrganizationName = orgName
 	return &tenant, nil
 }
-
-// Tenant represents an isolated business unit.
-type Tenant struct {
-	ID                 string
-	Slug               string
-	Name               string
-	Environment        string
-	Status             string
-	Plan               string // e.g. "free", "standard", "enterprise"
-	IsActive           bool
-	Settings           map[string]string
-	OrganizationID     string
-	OrganizationSlug   string
-	OrganizationName   string
-}

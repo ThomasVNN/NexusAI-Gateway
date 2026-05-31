@@ -60,21 +60,22 @@ type PrivacyFilter interface {
 type AuditLogger interface {
 	LogAccess(ctx context.Context, tenantID, userID, resource, action string, allowed bool) error
 	LogRedaction(ctx context.Context, tenantID, userID string, fieldCount int) error
+	LogRedactionDetailed(ctx context.Context, entry *RedactionAuditEntry) error
 }
 
 // AuditEntry represents a single audit log entry
 type AuditEntry struct {
-	Timestamp  time.Time              `json:"timestamp"`
-	TenantID   string                 `json:"tenant_id"`
-	UserID     string                 `json:"user_id"`
-	Resource   string                 `json:"resource"`
-	Action     string                 `json:"action"`
-	Allowed    bool                   `json:"allowed"`
-	Redactions int                    `json:"redactions,omitempty"`
-	PIITypes   []PIIType             `json:"pii_types,omitempty"`
-	Details    map[string]interface{} `json:"details,omitempty"`
-	TraceID    string                 `json:"trace_id,omitempty"`
-	Correlation string                `json:"correlation_id,omitempty"`
+	Timestamp   time.Time              `json:"timestamp"`
+	TenantID    string                 `json:"tenant_id"`
+	UserID      string                 `json:"user_id"`
+	Resource    string                 `json:"resource"`
+	Action      string                 `json:"action"`
+	Allowed     bool                   `json:"allowed"`
+	Redactions  int                    `json:"redactions,omitempty"`
+	PIITypes    []PIIType              `json:"pii_types,omitempty"`
+	Details     map[string]interface{} `json:"details,omitempty"`
+	TraceID     string                 `json:"trace_id,omitempty"`
+	Correlation string                 `json:"correlation_id,omitempty"`
 }
 
 // RedactionAuditEntry represents an audit entry for redaction operations
@@ -116,9 +117,9 @@ type StandardAuditLogger struct {
 // AuditLoggerConfig holds configuration for the standard audit logger
 type AuditLoggerConfig struct {
 	Logger        *slog.Logger
-	Format       string // "json" or "text"
-	LogRedacted  bool   // Whether to log redacted content hashes
-	LogPIIDetails bool  // Whether to log PII type details
+	Format        string // "json" or "text"
+	LogRedacted   bool   // Whether to log redacted content hashes
+	LogPIIDetails bool   // Whether to log PII type details
 	RetentionDays int    // Days to retain audit logs (0 = indefinite)
 }
 
@@ -152,10 +153,10 @@ func (l *StandardAuditLogger) LogAccess(ctx context.Context, tenantID, userID, r
 	entry := AuditEntry{
 		Timestamp: time.Now().UTC(),
 		TenantID:  tenantID,
-		UserID:   userID,
-		Resource: resource,
-		Action:   action,
-		Allowed:  allowed,
+		UserID:    userID,
+		Resource:  resource,
+		Action:    action,
+		Allowed:   allowed,
 	}
 
 	l.logger.Info("Privacy access audit",
@@ -464,7 +465,7 @@ func (r *AuditRecorder) GetStats() map[string]interface{} {
 
 	stats := map[string]interface{}{
 		"total_entries":   len(r.entries),
-		"enabled":        r.enabled,
+		"enabled":         r.enabled,
 		"retention_hours": r.retention.Hours(),
 	}
 

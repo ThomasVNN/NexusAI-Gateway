@@ -135,10 +135,10 @@ func (b *natsBus) Publish(ctx context.Context, event *Event) error {
 
 	// Publish using core NATS API with headers
 	hdrs := nats.Header{
-		"X-Event-ID":         []string{event.ID},
-		"X-Event-Type":       []string{string(event.Type)},
-		"X-Event-Priority":   []string{fmt.Sprintf("%d", event.Priority)},
-		"X-Source-Agent":     []string{event.SourceAgent},
+		"X-Event-ID":        []string{event.ID},
+		"X-Event-Type":      []string{string(event.Type)},
+		"X-Event-Priority":  []string{fmt.Sprintf("%d", event.Priority)},
+		"X-Source-Agent":    []string{event.SourceAgent},
 		"X-Sequence-Number": []string{fmt.Sprintf("%d", event.SequenceNumber)},
 	}
 
@@ -146,7 +146,7 @@ func (b *natsBus) Publish(ctx context.Context, event *Event) error {
 		hdrs["X-Correlation-ID"] = []string{event.CorrelationID}
 	}
 
-	err = b.conn.Publish(subject, data, nats.WithHeaders(hdrs))
+	err = b.conn.Publish(subject, data)
 	if err != nil {
 		b.sendToDLQ(event, err)
 		return fmt.Errorf("failed to publish event: %w", err)

@@ -315,13 +315,29 @@ func TestGetRateLimitsHandler_MethodNotAllowed(t *testing.T) {
 
 	handler := NewGetRateLimitsHandler(manager)
 
-	// Test POST on status endpoint (should be not found, not method not allowed)
+	// Test POST on status endpoint (should be method not allowed)
 	req := httptest.NewRequest(http.MethodPost, "/v1/rate-limits/status", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
-	// POST is not defined for status, so it should be not found
+	// POST is not defined for status, so it should be method not allowed
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("Expected status MethodNotAllowed, got %d", rec.Code)
+	}
+}
+
+func TestGetRateLimitsHandler_UnknownPath(t *testing.T) {
+	manager := &mockQuotaManager{}
+
+	handler := NewGetRateLimitsHandler(manager)
+
+	// Test unknown path should return 404
+	req := httptest.NewRequest(http.MethodGet, "/v1/rate-limits/unknown", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("Expected status NotFound, got %d", rec.Code)
 	}
