@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/auth"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/billing"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/channel"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/config"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/log"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/ratelimit"
@@ -20,6 +23,8 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
 	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/tenancy"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/token"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/user"
 )
 
 var startTime = time.Now()
@@ -100,6 +105,39 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	rateLimitMiddleware := ratelimit.NewRateLimitMiddleware(quotaManager, tenantResolver, rateLimitConfig)
 	rateLimitHandler := handler.NewGetRateLimitsHandler(handler.ToQuotaManagerInterface(quotaManager))
 
+	// Initialize new-api services (only if DB is healthy)
+	var apiHandler *handler.APIHandler
+	var chService *channel.Service
+	var tgService *token.Service
+	var uService *user.Service
+	var logService *log.Service
+	var billingService *billing.Service
+
+	if isDbHealthy {
+		// Channel management
+		chRepo := channel.NewRepository(db.DB)
+		chService = channel.NewService(chRepo)
+
+		// Token group management
+		tgRepo := token.NewRepository(db.DB)
+		tgService = token.NewService(tgRepo)
+
+		// User management
+		uRepo := user.NewRepository(db.DB)
+		uService = user.NewService(uRepo)
+
+		// Request logging
+		logRepo := log.NewRepository(db.DB)
+		logService = log.NewService(logRepo)
+
+		// Billing
+		billingRepo := billing.NewRepository(db.DB)
+		billingService = billing.NewService(billingRepo)
+
+		// Initialize API handler with all services
+		apiHandler = handler.NewAPIHandler(chService, tgService, uService, logService, billingService)
+	}
+
 	// OpenAI endpoints
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
 	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
@@ -130,6 +168,34 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux.HandleFunc("/v1/rate-limits/reset", rateLimitHandler.ServeHTTP)
 	mux.HandleFunc("/v1/rate-limits/quota", rateLimitHandler.ServeHTTP)
 	mux.HandleFunc("/v1/rate-limits/health", rateLimitHandler.ServeHTTP)
+
+	// new-api: Channel Management Endpoints
+	if apiHandler != nil {
+		mux.HandleFunc("/api/channels", apiHandler.HandleChannels)
+		mux.HandleFunc("/api/channels/", apiHandler.HandleChannel)
+		mux.HandleFunc("/api/channels/{id}/test", apiHandler.HandleChannelTest)
+
+		// Token Group Endpoints
+		mux.HandleFunc("/api/token-groups", apiHandler.HandleTokenGroups)
+		mux.HandleFunc("/api/token-groups/", apiHandler.HandleTokenGroup)
+
+		// User Management Endpoints
+		mux.HandleFunc("/api/users", apiHandler.HandleUsers)
+		mux.HandleFunc("/api/users/", apiHandler.HandleUser)
+
+		// Analytics Endpoints
+		mux.HandleFunc("/api/analytics/overview", apiHandler.HandleAnalyticsOverview)
+		mux.HandleFunc("/api/analytics/models", apiHandler.HandleAnalyticsModels)
+		mux.HandleFunc("/api/analytics/channels", apiHandler.HandleAnalyticsChannels)
+
+		// Request Log Endpoints
+		mux.HandleFunc("/api/logs", apiHandler.HandleLogs)
+		mux.HandleFunc("/api/logs/", apiHandler.HandleLog)
+
+		// Billing Endpoints
+		mux.HandleFunc("/api/billing", apiHandler.HandleBilling)
+		mux.HandleFunc("/api/billing/pricing", apiHandler.HandleBillingPricing)
+	}
 
 	// Diagnostics & Observability endpoints
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
