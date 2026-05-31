@@ -12,6 +12,7 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
@@ -170,6 +171,9 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		fmt.Fprintf(w, "# HELP nexusai_gateway_uptime_seconds Uptime of the gateway in seconds.\n")
 		fmt.Fprintf(w, "# TYPE nexusai_gateway_uptime_seconds gauge\n")
 		fmt.Fprintf(w, "nexusai_gateway_uptime_seconds %.0f\n", time.Since(startTime).Seconds())
+
+		// Export Prometheus metrics using the observability handler
+		observability.PrometheusHandler().ServeHTTP(w, r)
 	})
 
 	// Single Page Application static server
