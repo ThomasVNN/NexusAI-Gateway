@@ -250,7 +250,6 @@ func (h *QuotaHandler) ResetQuota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storage := h.quotaManager.GetStorage()
 	keys := ratelimit.NewRateKeyBuilder()
 
 	resetScopes := req.Scope

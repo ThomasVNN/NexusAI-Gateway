@@ -10,17 +10,20 @@ import (
 
 // Config holds all environmental configurations for the application
 type Config struct {
-	Port                 string
-	PostgresURL          string
-	RedisURL             string
-	JWKSPrivate          string
-	OIDCIssuer           string
-	InitialPassword      string
-	AppEnv               string // local, development, staging, production
-	UpstreamAPIURL       string
-	UpstreamAPIKey       string
-	EnableSandboxFallback bool
-	CORSAllowedOrigins   []string
+	Port                   string
+	PostgresURL            string
+	RedisURL               string
+	JWKSPrivate            string
+	OIDCIssuer             string
+	InitialPassword        string
+	AppEnv                 string // local, development, staging, production
+	UpstreamAPIURL         string
+	UpstreamAPIKey         string
+	EnableSandboxFallback  bool
+	CORSAllowedOrigins     []string
+	// Observability configuration
+	ObservabilityEnabled   bool
+	OTLPEndpoint           string
 }
 
 // UnsafeDefaults contains known unsafe default values for detection
@@ -84,17 +87,27 @@ func Load() *Config {
 		}
 	}
 
+	// Observability configuration
+	observabilityEnabled := os.Getenv("OBSERVABILITY_ENABLED") == "true"
+	// Enable by default in production/staging
+	if appEnv == "production" || appEnv == "staging" {
+		observabilityEnabled = true
+	}
+	otlpEndpoint := os.Getenv("OTLP_ENDPOINT")
+
 	return &Config{
-		Port:                   port,
-		PostgresURL:            postgresURL,
-		RedisURL:               redisURL,
-		OIDCIssuer:             oidcIssuer,
-		InitialPassword:        initialPassword,
-		AppEnv:                 appEnv,
-		UpstreamAPIURL:         upstreamAPIURL,
-		UpstreamAPIKey:         upstreamAPIKey,
-		EnableSandboxFallback:  enableSandboxFallback,
-		CORSAllowedOrigins:     corsOrigins,
+		Port:                    port,
+		PostgresURL:             postgresURL,
+		RedisURL:                redisURL,
+		OIDCIssuer:              oidcIssuer,
+		InitialPassword:         initialPassword,
+		AppEnv:                  appEnv,
+		UpstreamAPIURL:          upstreamAPIURL,
+		UpstreamAPIKey:          upstreamAPIKey,
+		EnableSandboxFallback:   enableSandboxFallback,
+		CORSAllowedOrigins:      corsOrigins,
+		ObservabilityEnabled:    observabilityEnabled,
+		OTLPEndpoint:            otlpEndpoint,
 	}
 }
 

@@ -2,44 +2,19 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/apierror"
 )
 
-type ErrorDetail struct {
-	Field   string `json:"field,omitempty"`
-	Message string `json:"message"`
-}
-
-type ErrorPayload struct {
-	Code    string        `json:"code"`
-	Message string        `json:"message"`
-	Details []ErrorDetail `json:"details"`
-}
-
-type APIErrorResponse struct {
-	Success bool          `json:"success"`
-	Data    interface{}   `json:"data"`
-	Meta    interface{}   `json:"meta"`
-	Error   *ErrorPayload `json:"error"`
-}
+type ErrorPayload = apierror.ErrorPayload
+type ErrorDetail = apierror.ErrorDetail
+type APIErrorResponse = apierror.APIErrorResponse
 
 func WriteError(w http.ResponseWriter, statusCode int, errorCode string, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	resp := APIErrorResponse{
-		Success: false,
-		Data:    nil,
-		Meta:    map[string]interface{}{},
-		Error: &ErrorPayload{
-			Code:    errorCode,
-			Message: message,
-			Details: []ErrorDetail{},
-		},
-	}
-	_ = json.NewEncoder(w).Encode(resp)
+	apierror.WriteError(w, statusCode, errorCode, message)
 }
 
 func LogSecurityEvent(r *http.Request, level string, msg string, event string, reason string) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -179,7 +178,7 @@ func (s *InMemoryStorage) IncrementConcurrent(ctx context.Context, key string) (
 	defer s.mu.Unlock()
 
 	concurrentKey := key + ":concurrent"
-	count, exists := s.counters[concurrentKey]
+	_, exists := s.counters[concurrentKey]
 
 	if !exists {
 		s.counters[concurrentKey] = 1

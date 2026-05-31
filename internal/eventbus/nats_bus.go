@@ -2,27 +2,24 @@ package eventbus
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
-// natsBus implements Bus using NATS JetStream for production deployments
+// natsBus implements Bus using NATS core pub/sub for production deployments
 type natsBus struct {
 	config     *BusConfig
 	logger     *slog.Logger
 	conn       *nats.Conn
-	js         jetstream.JetStream
 	ctx        context.Context
 	cancel     context.CancelFunc
 	subs       map[string]*Subscription
 	handlers   map[string]EventHandler
-	jsCons     map[string]jetstream.Consumer
+	natsSubs   map[string]*nats.Subscription // NATS subscription objects for cleanup
 	dlq        map[string]*DLQEntry
 	eventOrder *EventSequencer
 	mu         sync.RWMutex
@@ -40,7 +37,7 @@ func WithNATSConnection(conn *nats.Conn) NATSOption {
 	}
 }
 
-// NewNATSBus creates a new event bus backed by NATS JetStream
+// NewNATSBus creates a new event bus backed by NATS core pub/sub
 func NewNATSBus(ctx context.Context, cfg *BusConfig, opts ...NATSOption) (Bus, error) {
 	if cfg == nil || cfg.Config == nil {
 		return nil, fmt.Errorf("configuration is required")
@@ -62,11 +59,11 @@ func NewNATSBus(ctx context.Context, cfg *BusConfig, opts ...NATSOption) (Bus, e
 		logger:     cfg.Logger,
 		subs:       make(map[string]*Subscription),
 		handlers:   make(map[string]EventHandler),
-		jsCons:     make(map[string]jetstream.Consumer),
+		natsSubs:   make(map[string]*nats.Subscription),
 		dlq:        make(map[string]*DLQEntry),
 		eventOrder: NewEventSequencer(),
-		ctx:       childCtx,
-		cancel:    cancel,
+		ctx:        childCtx,
+		cancel:     cancel,
 	}
 
 	// Apply options
@@ -91,47 +88,12 @@ func NewNATSBus(ctx context.Context, cfg *BusConfig, opts ...NATSOption) (Bus, e
 		bus.conn = nc
 	}
 
-	// Create JetStream context
-	js, err := jetstream.New(bus.conn)
-	if err != nil {
-		bus.conn.Close()
-		cancel()
-		return nil, fmt.Errorf("failed to create JetStream context: %w", err)
-	}
-	bus.js = js
-
-	// Ensure stream exists
-	if err := bus.ensureStream(ctx, natsConfig); err != nil {
-		bus.Close()
-		return nil, err
-	}
-
-	bus.logger.Info("NATS JetStream event bus initialized",
+	bus.logger.Info("NATS event bus initialized",
 		slog.String("url", natsConfig.URLs[0]),
-		slog.String("stream", natsConfig.StreamName),
+		slog.String("provider", "core-pubsub"),
 	)
 
 	return bus, nil
-}
-
-// ensureStream creates the JetStream stream if it doesn't exist
-func (b *natsBus) ensureStream(ctx context.Context, cfg *NATSConfig) error {
-	spec := jetstream.StreamConfig{
-		Name:        cfg.StreamName,
-		Description: "NexusAI Agent Event Bus Stream",
-		Subjects:    []string{"events.>"},
-		Retention:   jetstream.WorkQueuePolicy,
-		MaxAge:     24 * time.Hour,
-		Storage:     jetstream.FileStorage,
-		Replicas:    1,
-	}
-
-	_, err := b.js.CreateOrUpdateStream(ctx, spec)
-	if err != nil {
-		return fmt.Errorf("failed to create stream: %w", err)
-	}
-
-	return nil
 }
 
 // Publish sends an event to NATS
@@ -141,7 +103,7 @@ func (b *natsBus) Publish(ctx context.Context, event *Event) error {
 	}
 
 	if event.ID == "" {
-		event.ID = generateEventID()
+		event.ID = GenerateEventID()
 	}
 
 	if event.Timestamp.IsZero() {
@@ -171,12 +133,12 @@ func (b *natsBus) Publish(ctx context.Context, event *Event) error {
 	// Determine subject based on event type
 	subject := fmt.Sprintf("events.%s", event.Type)
 
-	// Publish with headers
+	// Publish using core NATS API with headers
 	hdrs := nats.Header{
-		"X-Event-ID":        []string{event.ID},
-		"X-Event-Type":      []string{string(event.Type)},
-		"X-Event-Priority":  []string{fmt.Sprintf("%d", event.Priority)},
-		"X-Source-Agent":    []string{event.SourceAgent},
+		"X-Event-ID":         []string{event.ID},
+		"X-Event-Type":       []string{string(event.Type)},
+		"X-Event-Priority":   []string{fmt.Sprintf("%d", event.Priority)},
+		"X-Source-Agent":     []string{event.SourceAgent},
 		"X-Sequence-Number": []string{fmt.Sprintf("%d", event.SequenceNumber)},
 	}
 
@@ -184,7 +146,7 @@ func (b *natsBus) Publish(ctx context.Context, event *Event) error {
 		hdrs["X-Correlation-ID"] = []string{event.CorrelationID}
 	}
 
-	_, err = b.js.Publish(ctx, subject, data, jetstream.WithHeaders(hdrs))
+	err = b.conn.Publish(subject, data, nats.WithHeaders(hdrs))
 	if err != nil {
 		b.sendToDLQ(event, err)
 		return fmt.Errorf("failed to publish event: %w", err)
@@ -234,9 +196,6 @@ func (b *natsBus) Subscribe(ctx context.Context, sub *Subscription) error {
 	b.handlers[sub.ID] = b.config.Handler
 	b.mu.Unlock()
 
-	// Create durable consumer for this subscription
-	consumerName := fmt.Sprintf("consumer_%s", sub.ID)
-
 	// Build subject filter
 	var subjects []string
 	if len(sub.EventTypes) == 0 || (len(sub.EventTypes) == 1 && sub.EventTypes[0] == "") {
@@ -247,36 +206,35 @@ func (b *natsBus) Subscribe(ctx context.Context, sub *Subscription) error {
 		}
 	}
 
-	cons, err := b.js.AddConsumer(ctx, b.config.Config.NATSConfig.StreamName, jetstream.ConsumerConfig{
-		Name:         consumerName,
-		Durable:      consumerName,
-		Description:  fmt.Sprintf("Consumer for client %s", sub.ClientID),
-		FilterSubject: subjects[0],
-		AckWait:     30 * time.Second,
-		MaxDeliver:  b.config.Config.DLQMaxRetries,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create consumer: %w", err)
+	// Create channel for receiving messages
+	msgChan := make(chan *nats.Msg, 100)
+
+	// Subscribe to each subject using ChanSubscribe
+	for _, subject := range subjects {
+		ns, err := b.conn.ChanSubscribe(subject, msgChan)
+		if err != nil {
+			return fmt.Errorf("failed to subscribe to %s: %w", subject, err)
+		}
+
+		b.mu.Lock()
+		b.natsSubs[sub.ID+"_"+subject] = ns
+		b.mu.Unlock()
 	}
 
-	b.mu.Lock()
-	b.jsCons[sub.ID] = cons
-	b.mu.Unlock()
-
-	// Start consuming in background
+	// Start message processor in background
 	b.wg.Add(1)
-	go b.consumeSubscription(ctx, sub.ID, cons)
+	go b.processMessages(sub.ID, msgChan)
 
 	b.logger.Info("NATS subscription created",
 		slog.String("subscription_id", sub.ID),
-		slog.String("consumer", consumerName),
+		slog.Any("subjects", subjects),
 	)
 
 	return nil
 }
 
-// consumeSubscription processes messages for a subscription
-func (b *natsBus) consumeSubscription(ctx context.Context, subID string, cons jetstream.Consumer) {
+// processMessages handles incoming messages from NATS subscriptions
+func (b *natsBus) processMessages(subID string, msgChan <-chan *nats.Msg) {
 	defer b.wg.Done()
 
 	b.mu.RLock()
@@ -288,51 +246,38 @@ func (b *natsBus) consumeSubscription(ctx context.Context, subID string, cons je
 		return
 	}
 
-	msgs, err := cons.Consume(b.ctx)
-	if err != nil {
-		b.logger.Error("Failed to start consumer",
-			slog.String("subscription_id", subID),
-			slog.String("error", err.Error()),
-		)
-		return
-	}
-
 	for {
 		select {
 		case <-b.ctx.Done():
 			return
-		case msg, ok := <-msgs.MsgChan():
+		case msg, ok := <-msgChan:
 			if !ok {
 				return
 			}
 
-			event, err := ParseEvent(msg.Data())
+			event, err := ParseEvent(msg.Data)
 			if err != nil {
 				b.logger.Error("Failed to parse event",
 					slog.String("subscription_id", subID),
 					slog.String("error", err.Error()),
 				)
-				msg.Nak()
 				continue
 			}
 
 			// Apply filters
 			if !b.matchesFilter(event, sub.Filter) {
-				msg.Ack()
 				continue
 			}
 
 			// Deliver to handler
-			deliverCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			deliverCtx, cancel := context.WithTimeout(b.ctx, 30*time.Second)
 			if err := handler(deliverCtx, event); err != nil {
 				b.logger.Error("Handler failed for event",
 					slog.String("subscription_id", subID),
 					slog.String("event_id", event.ID),
 					slog.String("error", err.Error()),
 				)
-				msg.Nak()
-			} else {
-				msg.Ack()
+				b.sendToDLQ(event, err)
 			}
 			cancel()
 		}
@@ -382,10 +327,22 @@ func (b *natsBus) Unsubscribe(ctx context.Context, subscriptionID string) error 
 		return fmt.Errorf("subscription not found: %s", subscriptionID)
 	}
 
-	// Delete consumer
-	if cons, ok := b.jsCons[subscriptionID]; ok {
-		_ = cons.Delete(ctx)
-		delete(b.jsCons, subscriptionID)
+	// Unsubscribe from all NATS subjects
+	var subjects []string
+	if len(sub.EventTypes) == 0 || (len(sub.EventTypes) == 1 && sub.EventTypes[0] == "") {
+		subjects = []string{"events.>"}
+	} else {
+		for _, et := range sub.EventTypes {
+			subjects = append(subjects, fmt.Sprintf("events.%s", et))
+		}
+	}
+
+	for _, subject := range subjects {
+		key := subscriptionID + "_" + subject
+		if ns, ok := b.natsSubs[key]; ok {
+			_ = ns.Unsubscribe()
+			delete(b.natsSubs, key)
+		}
 	}
 
 	delete(b.handlers, subscriptionID)
@@ -453,7 +410,14 @@ func (b *natsBus) RetryDLQEntry(ctx context.Context, entryID string) error {
 	delete(b.dlq, entryID)
 
 	// Re-publish the event
-	_, err := b.js.Publish(ctx, fmt.Sprintf("events.%s", entry.Event.Type), entry.Event.Payload)
+	subject := fmt.Sprintf("events.%s", entry.Event.Type)
+	data, err := entry.Event.ToJSON()
+	if err != nil {
+		b.dlq[entry.ID] = entry
+		return fmt.Errorf("failed to serialize event: %w", err)
+	}
+
+	err = b.conn.Publish(subject, data)
 	if err != nil {
 		b.dlq[entry.ID] = entry
 		return fmt.Errorf("failed to republish event: %w", err)
@@ -478,7 +442,7 @@ func (b *natsBus) PurgeDLQEntry(ctx context.Context, entryID string) error {
 
 // HealthCheck returns the health status of the NATS bus
 func (b *natsBus) HealthCheck(ctx context.Context) error {
-	if !b.conn.IsConnected() {
+	if b.conn == nil || !b.conn.IsConnected() {
 		return fmt.Errorf("NATS connection is not established")
 	}
 
@@ -494,36 +458,19 @@ func (b *natsBus) Close() error {
 	b.logger.Info("Shutting down NATS event bus...")
 	b.cancel()
 
+	// Unsubscribe all NATS subscriptions
+	b.mu.Lock()
+	for _, ns := range b.natsSubs {
+		_ = ns.Unsubscribe()
+	}
+	b.natsSubs = make(map[string]*nats.Subscription)
+	b.mu.Unlock()
+
+	// Wait for message processors to finish
 	b.wg.Wait()
 
 	if b.conn != nil {
 		b.conn.Close()
-	}
-
-	return nil
-}
-
-// PublishBatch publishes multiple events in a single batch
-func (b *natsBus) PublishBatch(ctx context.Context, events []*Event) error {
-	var pubOpts []jetstream.PublishOpt
-
-	for _, event := range events {
-		if event.ID == "" {
-			event.ID = generateEventID()
-		}
-		if event.Timestamp.IsZero() {
-			event.Timestamp = time.Now().UTC()
-		}
-
-		data, err := json.Marshal(event)
-		if err != nil {
-			return fmt.Errorf("failed to marshal event %s: %w", event.ID, err)
-		}
-
-		subject := fmt.Sprintf("events.%s", event.Type)
-		if _, err := b.js.Publish(ctx, subject, data, pubOpts...); err != nil {
-			return fmt.Errorf("failed to publish event %s: %w", event.ID, err)
-		}
 	}
 
 	return nil

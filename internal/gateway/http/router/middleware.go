@@ -13,9 +13,27 @@ import (
 	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/quota"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/tenancy"
 )
+
+// Middleware functions that wrap handlers with observability
+var Middleware = struct {
+	Tracing         func(http.Handler) http.Handler
+	CorrelationID   func(http.Handler) http.Handler
+	StructuredLog   func(http.Handler) http.Handler
+	Recovery        func(http.Handler) http.Handler
+	RateLimiting    func(http.Handler) http.Handler
+	Metrics         func(http.Handler) http.Handler
+}{
+	Tracing:         WithTracing,
+	CorrelationID:   WithCorrelationID,
+	StructuredLog:   WithStructuredLogging,
+	Recovery:        WithRecovery,
+	RateLimiting:    WithRateLimiting,
+	Metrics:         WithTracing, // Tracing includes metrics
+}
 
 type contextKey string
 
@@ -59,6 +77,22 @@ func GetCorrelationID(ctx context.Context) string {
 	return ""
 }
 
+// GetTraceID extracts the OpenTelemetry trace ID from context
+func GetTraceID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	return observability.GetTraceID(ctx)
+}
+
+// GetSpanID extracts the OpenTelemetry span ID from context
+func GetSpanID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	return observability.GetSpanID(ctx)
+}
+
 // WithCorrelationID injects a unique request tracer header if not present
 func WithCorrelationID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +134,7 @@ func WithStructuredLogging(next http.Handler) http.Handler {
 	})
 }
 
-// WithRecovery recovers from panics gracefully, captures stack trace, and writes structural error payload
+// WithRecovery recover from panics gracefully, captures stack trace, and writes structural error payload
 func WithRecovery(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -200,6 +234,40 @@ func WithTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// WithTracing wraps HTTP handlers with OpenTelemetry tracing
+func WithTracing(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startTime := time.Now()
+		corrID := GetCorrelationID(r.Context())
+		traceID := GetTraceID(r.Context())
+		spanID := GetSpanID(r.Context())
+
+		wrappedWriter := &responseWriterWrapper{ResponseWriter: w}
+
+		next.ServeHTTP(wrappedWriter, r)
+
+		duration := time.Since(startTime)
+
+		// Record metrics if available
+		m := observability.GetGlobalMetrics()
+		if m != nil {
+			m.ObserveRequest(r.Method, r.URL.Path, wrappedWriter.statusCode, duration)
+		}
+
+		// Log with full trace context
+		slog.InfoContext(r.Context(), "HTTP request completed",
+			slog.String("service", "nexusai-gateway"),
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.String("correlation_id", corrID),
+			slog.String("trace_id", traceID),
+			slog.String("span_id", spanID),
+			slog.Int("status_code", wrappedWriter.statusCode),
+			slog.Int64("latency_ms", duration.Milliseconds()),
+		)
+	})
 }
 
 type ipLimiter struct {

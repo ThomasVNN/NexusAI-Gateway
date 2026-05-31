@@ -10,7 +10,7 @@ import (
 type Config struct {
 	ServiceName    string
 	ServiceVersion string
-	OTLPEndpoint string
+	OTLPEndpoint   string
 	Enabled        bool
 }
 
@@ -70,6 +70,9 @@ func Init(ctx context.Context, cfg Config) error {
 
 	// Initialize Prometheus metrics
 	InitGlobalMetricsCollector()
+
+	// Set the global metrics collector to the Prometheus implementation
+	GlobalMetrics = &PrometheusMetricsCollector{metrics: GetGlobalMetrics()}
 
 	slog.Info("Observability initialized",
 		slog.String("service", cfg.ServiceName),

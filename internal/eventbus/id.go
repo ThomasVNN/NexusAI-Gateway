@@ -138,3 +138,8 @@ func GenerateClientID() string {
 func GenerateSubscriptionID() string {
 	return "sub_" + generateEventID()
 }
+
+// GenerateEventID creates a ULID-style sortable unique identifier (exported version)
+func GenerateEventID() string {
+	return generateEventID()
+}

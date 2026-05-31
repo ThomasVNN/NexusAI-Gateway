@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/apierror"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/tenancy"
 )
 
