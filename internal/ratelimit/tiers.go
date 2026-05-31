@@ -12,13 +12,13 @@ const (
 
 // TierConfig holds rate limit configuration for a specific tier
 type TierConfig struct {
-	Tier             RateLimitTier
-	RequestsPerMin   int
-	BurstSize        int
-	RequestsPerHour  int
-	RequestsPerDay   int
-	ConcurrentLimit  int
-	Enabled          bool
+	Tier            RateLimitTier
+	RequestsPerMin  int
+	BurstSize       int
+	RequestsPerHour int
+	RequestsPerDay  int
+	ConcurrentLimit int
+	Enabled         bool
 }
 
 // DefaultTierConfigs provides default rate limit configurations
@@ -73,11 +73,11 @@ func GetTierConfig(tier RateLimitTier) TierConfig {
 type RateLimitScope string
 
 const (
-	ScopeGlobal  RateLimitScope = "global"
-	ScopeTenant  RateLimitScope = "tenant"
-	ScopeUser    RateLimitScope = "user"
-	ScopeSkill   RateLimitScope = "skill"
-	ScopeAPIKey  RateLimitScope = "apikey"
+	ScopeGlobal RateLimitScope = "global"
+	ScopeTenant RateLimitScope = "tenant"
+	ScopeUser   RateLimitScope = "user"
+	ScopeSkill  RateLimitScope = "skill"
+	ScopeAPIKey RateLimitScope = "apikey"
 )
 
 // RateLimitType defines the type of rate limit
@@ -104,32 +104,32 @@ type RateLimitResult struct {
 
 // RateLimitInfo contains detailed rate limit information for response headers
 type RateLimitInfo struct {
-	Limit              int   `json:"limit"`
-	Remaining          int   `json:"remaining"`
-	Reset              int64 `json:"reset"`
-	ResetInSeconds     int   `json:"reset_in_seconds"`
-	RetryAfter         int   `json:"retry_after,omitempty"`
-	Tier               string `json:"tier"`
-	Scope              string `json:"scope"`
-	RequestsPerMin     int    `json:"requests_per_min"`
-	RequestsPerHour    int    `json:"requests_per_hour"`
-	RequestsPerDay     int    `json:"requests_per_day"`
+	Limit           int    `json:"limit"`
+	Remaining       int    `json:"remaining"`
+	Reset           int64  `json:"reset"`
+	ResetInSeconds  int    `json:"reset_in_seconds"`
+	RetryAfter      int    `json:"retry_after,omitempty"`
+	Tier            string `json:"tier"`
+	Scope           string `json:"scope"`
+	RequestsPerMin  int    `json:"requests_per_min"`
+	RequestsPerHour int    `json:"requests_per_hour"`
+	RequestsPerDay  int    `json:"requests_per_day"`
 }
 
 // RateLimitConfig holds the full rate limiting configuration
 type RateLimitConfig struct {
-	Enabled         bool
-	DefaultTier     RateLimitTier
-	RedisURL        string
-	WindowSizeSecs  int
-	BypassLimits    bool // For testing/admin purposes
+	Enabled        bool
+	DefaultTier    RateLimitTier
+	RedisURL       string
+	WindowSizeSecs int
+	BypassLimits   bool // For testing/admin purposes
 }
 
 // DefaultRateLimitConfig returns a sensible default configuration
 func DefaultRateLimitConfig() *RateLimitConfig {
 	return &RateLimitConfig{
 		Enabled:        true,
-		DefaultTier:     TierFree,
+		DefaultTier:    TierFree,
 		WindowSizeSecs: 60,
 		BypassLimits:   false,
 	}

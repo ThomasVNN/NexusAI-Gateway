@@ -9,12 +9,12 @@ import (
 
 // QuotaPlan represents a tier-based quota configuration
 type QuotaPlan struct {
-	Name         string            // e.g., "free", "standard", "enterprise"
-	RequestsPerMin int             `json:"requests_per_minute"`
-	RequestsPerHour int            `json:"requests_per_hour"`
-	RequestsPerDay int             `json:"requests_per_day"`
-	MaxTokensPerDay int            `json:"max_tokens_per_day"`
-	Features      map[string]bool  // e.g., {"streaming": true, "analytics": false}
+	Name            string          // e.g., "free", "standard", "enterprise"
+	RequestsPerMin  int             `json:"requests_per_minute"`
+	RequestsPerHour int             `json:"requests_per_hour"`
+	RequestsPerDay  int             `json:"requests_per_day"`
+	MaxTokensPerDay int             `json:"max_tokens_per_day"`
+	Features        map[string]bool // e.g., {"streaming": true, "analytics": false}
 }
 
 // DefaultQuotaPlans returns predefined quota plans
@@ -64,15 +64,15 @@ func DefaultQuotaPlans() map[string]*QuotaPlan {
 
 // QuotaUsage tracks current quota consumption
 type QuotaUsage struct {
-	TenantID         string    `json:"tenant_id"`
-	Plan             string    `json:"plan"`
-	MinuteRequests   int       `json:"requests_this_minute"`
-	HourRequests     int       `json:"requests_this_hour"`
-	DayRequests      int       `json:"requests_today"`
-	TokensToday      int       `json:"tokens_today"`
-	LastMinuteReset  time.Time `json:"last_minute_reset"`
-	LastHourReset    time.Time `json:"last_hour_reset"`
-	LastDayReset     time.Time `json:"last_day_reset"`
+	TenantID        string    `json:"tenant_id"`
+	Plan            string    `json:"plan"`
+	MinuteRequests  int       `json:"requests_this_minute"`
+	HourRequests    int       `json:"requests_this_hour"`
+	DayRequests     int       `json:"requests_today"`
+	TokensToday     int       `json:"tokens_today"`
+	LastMinuteReset time.Time `json:"last_minute_reset"`
+	LastHourReset   time.Time `json:"last_hour_reset"`
+	LastDayReset    time.Time `json:"last_day_reset"`
 }
 
 // QuotaRepository defines the interface for quota persistence
@@ -86,9 +86,9 @@ type QuotaRepository interface {
 
 // InMemoryQuotaRepository implements QuotaRepository in-memory
 type InMemoryQuotaRepository struct {
-	mu     sync.RWMutex
-	usage  map[string]*QuotaUsage
-	plans  map[string]*QuotaPlan
+	mu    sync.RWMutex
+	usage map[string]*QuotaUsage
+	plans map[string]*QuotaPlan
 }
 
 // NewInMemoryQuotaRepository creates a new in-memory quota repository
@@ -188,10 +188,10 @@ func (r *InMemoryQuotaRepository) UpdatePlan(ctx context.Context, plan *QuotaPla
 
 // TenantRateLimiter manages rate limiting per tenant
 type TenantRateLimiter struct {
-	mu        sync.RWMutex
-	requests  map[string][]time.Time // tenantID -> request timestamps
-	plan      *QuotaPlan
-	planName  string
+	mu       sync.RWMutex
+	requests map[string][]time.Time // tenantID -> request timestamps
+	plan     *QuotaPlan
+	planName string
 }
 
 // NewTenantRateLimiter creates a new tenant rate limiter
@@ -300,15 +300,15 @@ func (r *TenantRateLimiter) Reset(tenantID string) {
 
 // QuotaExceededError represents a quota exceeded error
 type QuotaExceededError struct {
-	PlanName    string
-	LimitType   string // "minute", "hour", "day", "tokens"
+	PlanName     string
+	LimitType    string // "minute", "hour", "day", "tokens"
 	CurrentUsage int
-	Limit       int
-	ResetTime   time.Time
+	Limit        int
+	ResetTime    time.Time
 }
 
 func (e *QuotaExceededError) Error() string {
-	return "quota exceeded: " + e.LimitType + " limit reached (" + 
+	return "quota exceeded: " + e.LimitType + " limit reached (" +
 		string(rune(e.CurrentUsage)) + "/" + string(rune(e.Limit)) + ")"
 }
 
@@ -341,44 +341,44 @@ func CheckQuota(usage *QuotaUsage, plan *QuotaPlan, tokens int) error {
 	// Check minute limit
 	if usage.MinuteRequests >= plan.RequestsPerMin {
 		return &QuotaExceededError{
-			PlanName:    plan.Name,
-			LimitType:   "minute",
+			PlanName:     plan.Name,
+			LimitType:    "minute",
 			CurrentUsage: usage.MinuteRequests,
-			Limit:       plan.RequestsPerMin,
-			ResetTime:   usage.LastMinuteReset.Add(time.Minute),
+			Limit:        plan.RequestsPerMin,
+			ResetTime:    usage.LastMinuteReset.Add(time.Minute),
 		}
 	}
 
 	// Check hour limit
 	if usage.HourRequests >= plan.RequestsPerHour {
 		return &QuotaExceededError{
-			PlanName:    plan.Name,
-			LimitType:   "hour",
+			PlanName:     plan.Name,
+			LimitType:    "hour",
 			CurrentUsage: usage.HourRequests,
-			Limit:       plan.RequestsPerHour,
-			ResetTime:   usage.LastHourReset.Add(time.Hour),
+			Limit:        plan.RequestsPerHour,
+			ResetTime:    usage.LastHourReset.Add(time.Hour),
 		}
 	}
 
 	// Check day limit
 	if usage.DayRequests >= plan.RequestsPerDay {
 		return &QuotaExceededError{
-			PlanName:    plan.Name,
-			LimitType:   "day",
+			PlanName:     plan.Name,
+			LimitType:    "day",
 			CurrentUsage: usage.DayRequests,
-			Limit:       plan.RequestsPerDay,
-			ResetTime:   usage.LastDayReset.Add(24 * time.Hour),
+			Limit:        plan.RequestsPerDay,
+			ResetTime:    usage.LastDayReset.Add(24 * time.Hour),
 		}
 	}
 
 	// Check token limit
 	if usage.TokensToday+tokens > plan.MaxTokensPerDay {
 		return &QuotaExceededError{
-			PlanName:    plan.Name,
-			LimitType:   "tokens",
+			PlanName:     plan.Name,
+			LimitType:    "tokens",
 			CurrentUsage: usage.TokensToday,
-			Limit:       plan.MaxTokensPerDay,
-			ResetTime:   usage.LastDayReset.Add(24 * time.Hour),
+			Limit:        plan.MaxTokensPerDay,
+			ResetTime:    usage.LastDayReset.Add(24 * time.Hour),
 		}
 	}
 

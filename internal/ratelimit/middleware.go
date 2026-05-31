@@ -16,10 +16,10 @@ import (
 
 // RateLimitMiddleware provides multi-layered rate limiting
 type RateLimitMiddleware struct {
-	quotaManager *QuotaManager
+	quotaManager   *QuotaManager
 	tenantResolver tenancy.TenantResolver
-	config       *RateLimitConfig
-	logger       *slog.Logger
+	config         *RateLimitConfig
+	logger         *slog.Logger
 }
 
 // NewRateLimitMiddleware creates a new rate limit middleware
@@ -29,10 +29,10 @@ func NewRateLimitMiddleware(quotaManager *QuotaManager, tenantResolver tenancy.T
 	}
 
 	return &RateLimitMiddleware{
-		quotaManager:  quotaManager,
+		quotaManager:   quotaManager,
 		tenantResolver: tenantResolver,
-		config:        config,
-		logger:        slog.Default(),
+		config:         config,
+		logger:         slog.Default(),
 	}
 }
 
@@ -266,8 +266,8 @@ func GetRateLimitResult(ctx context.Context) *RateLimitResult {
 
 // TierConfigOverride allows dynamic tier configuration per tenant
 type TierConfigOverride struct {
-	TenantID string
-	Tier     RateLimitTier
+	TenantID     string
+	Tier         RateLimitTier
 	CustomLimits *TierConfig
 }
 

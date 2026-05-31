@@ -19,25 +19,25 @@ type ContextManager struct {
 
 // Session represents a user conversation session
 type Session struct {
-	ID          string
-	TenantID    string
-	UserID      string
-	Messages    []*Message
-	Metadata    map[string]interface{}
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	ExpiresAt   time.Time
-	IsActive    bool
+	ID        string
+	TenantID  string
+	UserID    string
+	Messages  []*Message
+	Metadata  map[string]interface{}
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	ExpiresAt time.Time
+	IsActive  bool
 }
 
 // Message represents a single turn in a conversation
 type Message struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"` // "user" or "assistant"
-	Content   string    `json:"content"`
-	Model     string    `json:"model,omitempty"`
-	Tokens    int       `json:"tokens,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+	ID        string                 `json:"id"`
+	Role      string                 `json:"role"` // "user" or "assistant"
+	Content   string                 `json:"content"`
+	Model     string                 `json:"model,omitempty"`
+	Tokens    int                    `json:"tokens,omitempty"`
+	Timestamp time.Time              `json:"timestamp"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -265,10 +265,10 @@ func (cm *ContextManager) DeserializeContext(sessionID string, data string) erro
 	defer cm.mu.Unlock()
 
 	session := &Session{
-		ID:        sessionID,
-		Messages:  make([]*Message, 0),
-		Metadata:  make(map[string]interface{}),
-		IsActive:  true,
+		ID:       sessionID,
+		Messages: make([]*Message, 0),
+		Metadata: make(map[string]interface{}),
+		IsActive: true,
 	}
 
 	if tenantID, ok := ctx["tenant_id"].(string); ok {

@@ -33,8 +33,8 @@ type EvaluationMetrics struct {
 	PassedEvaluations int64            `json:"passed_evaluations"`
 	FailedEvaluations int64            `json:"failed_evaluations"`
 	ByCategory        map[string]int64 `json:"by_category"`
-	AverageScore     float64           `json:"average_score"`
-	mu               sync.RWMutex
+	AverageScore      float64          `json:"average_score"`
+	mu                sync.RWMutex
 }
 
 // GlobalMetrics is the global safety metrics
@@ -48,29 +48,29 @@ type HarmCategory string
 const (
 	HarmCategoryToxicity         HarmCategory = "toxicity"
 	HarmCategoryHateSpeech       HarmCategory = "hate_speech"
-	HarmCategoryViolence        HarmCategory = "violence"
+	HarmCategoryViolence         HarmCategory = "violence"
 	HarmCategorySexualContent    HarmCategory = "sexual_content"
-	HarmCategorySelfHarm        HarmCategory = "self_harm"
+	HarmCategorySelfHarm         HarmCategory = "self_harm"
 	HarmCategoryDangerousContent HarmCategory = "dangerous_content"
-	HarmCategoryPII             HarmCategory = "pii"
+	HarmCategoryPII              HarmCategory = "pii"
 	HarmCategoryPromptInjection  HarmCategory = "prompt_injection"
 	HarmCategoryDataExfiltration HarmCategory = "data_exfiltration"
 )
 
 // SafetyEngine performs AI safety evaluations
 type SafetyEngine struct {
-	level           SafetyLevel
-	patterns        map[HarmCategory]*regexp.Regexp
-	metrics        *EvaluationMetrics
-	threshold       float64
+	level     SafetyLevel
+	patterns  map[HarmCategory]*regexp.Regexp
+	metrics   *EvaluationMetrics
+	threshold float64
 }
 
 // NewSafetyEngine creates a new safety evaluation engine
 func NewSafetyEngine(level SafetyLevel) *SafetyEngine {
 	engine := &SafetyEngine{
-		level:    level,
-		patterns: make(map[HarmCategory]*regexp.Regexp),
-		metrics:  GlobalMetrics,
+		level:     level,
+		patterns:  make(map[HarmCategory]*regexp.Regexp),
+		metrics:   GlobalMetrics,
 		threshold: 0.7,
 	}
 
@@ -98,7 +98,7 @@ func (e *SafetyEngine) initPatterns() {
 	e.patterns[HarmCategorySelfHarm] = regexp.MustCompile(`(?i)(?:suicide|self.?harm|cut.?myself|kill.?myself|end.?my.?life)`)
 
 	// Dangerous content patterns
-	e.patterns[HarmCategoryDangerousContent] = regexp.MustCompile(`(?i)(?:(?:how\s+to|instructions?\s+for|guide\s+to)\s+(?:make\s+(?:bomb|weapon|explosive|poison|drug)|hack\s+(?:computer|account|system)|kill|attack)`)
+	e.patterns[HarmCategoryDangerousContent] = regexp.MustCompile(`(?i)(?:how\s+to|instructions?\s+for|guide\s+to)\s+(?:make\s+(?:bomb|weapon|explosive|poison|drug)|hack\s+(?:computer|account|system)|kill|attack)`)
 
 	// PII patterns (enhanced from privacy filter)
 	e.patterns[HarmCategoryPII] = regexp.MustCompile(`(?i)(?:ssn|social\s+security|credit\s+card|password|secret\s+key|api\s+key)\s*[:=]\s*\S+`)
@@ -119,7 +119,7 @@ func (e *SafetyEngine) Evaluate(ctx context.Context, content string, contentType
 	result := &SafetyResult{
 		Passed: true,
 		Score:  1.0,
-		Flags:   []string{},
+		Flags:  []string{},
 	}
 
 	contentLower := strings.ToLower(content)
@@ -227,19 +227,19 @@ func (e *SafetyEngine) GetMetrics() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"total_evaluations":  e.metrics.TotalEvaluations,
-		"passed":              e.metrics.PassedEvaluations,
-		"failed":              e.metrics.FailedEvaluations,
-		"pass_rate":          avgScore,
-		"by_category":         e.metrics.ByCategory,
+		"total_evaluations": e.metrics.TotalEvaluations,
+		"passed":            e.metrics.PassedEvaluations,
+		"failed":            e.metrics.FailedEvaluations,
+		"pass_rate":         avgScore,
+		"by_category":       e.metrics.ByCategory,
 	}
 }
 
 // SafetyPolicy defines acceptable content policies
 type SafetyPolicy struct {
 	AllowedCategories []HarmCategory
-	BlockedPatterns  []string
-	MaxContentLength int
+	BlockedPatterns   []string
+	MaxContentLength  int
 }
 
 // DefaultPolicy returns the default safety policy
@@ -247,7 +247,7 @@ func DefaultPolicy() *SafetyPolicy {
 	return &SafetyPolicy{
 		AllowedCategories: []HarmCategory{},
 		BlockedPatterns:   []string{},
-		MaxContentLength:   100000,
+		MaxContentLength:  100000,
 	}
 }
 

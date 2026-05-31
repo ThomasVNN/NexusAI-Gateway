@@ -10,35 +10,35 @@ import (
 
 // BenchmarkResult represents the result of a benchmark run
 type BenchmarkResult struct {
-	Name           string          `json:"name"`
-	Iterations     int             `json:"iterations"`
-	Duration       time.Duration   `json:"duration"`
-	OpsPerSecond   float64         `json:"ops_per_second"`
-	MeanLatency    time.Duration   `json:"mean_latency"`
-	MinLatency     time.Duration   `json:"min_latency"`
-	MaxLatency     time.Duration   `json:"max_latency"`
-	P50Latency     time.Duration   `json:"p50_latency"`
-	P90Latency     time.Duration   `json:"p90_latency"`
-	P95Latency     time.Duration   `json:"p95_latency"`
-	P99Latency     time.Duration   `json:"p99_latency"`
-	StdDev         time.Duration   `json:"std_dev"`
-	SuccessCount   int64           `json:"success_count"`
-	ErrorCount     int64           `json:"error_count"`
-	TotalBytes     int64           `json:"total_bytes"`
-	ThroughputMBps float64         `json:"throughput_mbps"`
+	Name           string        `json:"name"`
+	Iterations     int           `json:"iterations"`
+	Duration       time.Duration `json:"duration"`
+	OpsPerSecond   float64       `json:"ops_per_second"`
+	MeanLatency    time.Duration `json:"mean_latency"`
+	MinLatency     time.Duration `json:"min_latency"`
+	MaxLatency     time.Duration `json:"max_latency"`
+	P50Latency     time.Duration `json:"p50_latency"`
+	P90Latency     time.Duration `json:"p90_latency"`
+	P95Latency     time.Duration `json:"p95_latency"`
+	P99Latency     time.Duration `json:"p99_latency"`
+	StdDev         time.Duration `json:"std_dev"`
+	SuccessCount   int64         `json:"success_count"`
+	ErrorCount     int64         `json:"error_count"`
+	TotalBytes     int64         `json:"total_bytes"`
+	ThroughputMBps float64       `json:"throughput_mbps"`
 }
 
 // BenchmarkMetrics holds aggregated benchmark data
 type BenchmarkMetrics struct {
-	Name        string
+	Name       string
 	StartTime  time.Time
 	EndTime    time.Time
 	Iterations int
 	mu         sync.Mutex
 	latencies  []time.Duration
 	successes  int64
-	errors    int64
-	bytes     int64
+	errors     int64
+	bytes      int64
 }
 
 // NewBenchmarkMetrics creates new benchmark metrics tracker
@@ -96,21 +96,21 @@ func (m *BenchmarkMetrics) GetResult() *BenchmarkResult {
 	stdDev := time.Duration(math.Sqrt(variance))
 
 	return &BenchmarkResult{
-		Name:          m.Name,
-		Iterations:    len(sorted),
-		Duration:      duration,
-		OpsPerSecond:  float64(len(sorted)) / duration.Seconds(),
-		MeanLatency:   time.Duration(meanNs),
-		MinLatency:    min,
-		MaxLatency:    max,
-		P50Latency:    sorted[int(n*0.50)],
-		P90Latency:    sorted[int(n*0.90)],
-		P95Latency:    sorted[int(n*0.95)],
-		P99Latency:    sorted[int(n*0.99)],
-		StdDev:        stdDev,
-		SuccessCount:  atomic.LoadInt64(&m.successes),
-		ErrorCount:    atomic.LoadInt64(&m.errors),
-		TotalBytes:    atomic.LoadInt64(&m.bytes),
+		Name:           m.Name,
+		Iterations:     len(sorted),
+		Duration:       duration,
+		OpsPerSecond:   float64(len(sorted)) / duration.Seconds(),
+		MeanLatency:    time.Duration(meanNs),
+		MinLatency:     min,
+		MaxLatency:     max,
+		P50Latency:     sorted[int(n*0.50)],
+		P90Latency:     sorted[int(n*0.90)],
+		P95Latency:     sorted[int(n*0.95)],
+		P99Latency:     sorted[int(n*0.99)],
+		StdDev:         stdDev,
+		SuccessCount:   atomic.LoadInt64(&m.successes),
+		ErrorCount:     atomic.LoadInt64(&m.errors),
+		TotalBytes:     atomic.LoadInt64(&m.bytes),
 		ThroughputMBps: float64(atomic.LoadInt64(&m.bytes)) / (1024 * 1024) / duration.Seconds(),
 	}
 }

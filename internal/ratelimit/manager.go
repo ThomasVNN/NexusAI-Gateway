@@ -17,9 +17,9 @@ import (
 //   - rate:apikey:key123:min -> per-api-key per-minute
 
 const (
-	keyPrefixRate      = "rate"
-	keyPrefixQuota     = "quota"
-	keyPrefixBurst     = "burst"
+	keyPrefixRate       = "rate"
+	keyPrefixQuota      = "quota"
+	keyPrefixBurst      = "burst"
 	keyPrefixConcurrent = "concurrent"
 )
 
@@ -219,9 +219,9 @@ func (r *SlidingWindowRateLimiter) GetStatus(ctx context.Context, key string, li
 
 // TokenBucketRateLimiter implements a token bucket rate limiter
 type TokenBucketRateLimiter struct {
-	storage     QuotaStorage
-	keys        *RateKeyBuilder
-	refillRate  float64 // tokens per second
+	storage    QuotaStorage
+	keys       *RateKeyBuilder
+	refillRate float64 // tokens per second
 }
 
 // NewTokenBucketRateLimiter creates a new token bucket rate limiter
@@ -282,21 +282,21 @@ func (t *TokenBucketRateLimiter) Acquire(ctx context.Context, key string, bucket
 	t.storage.SetCount(ctx, countKey, now.UnixNano(), 0)
 
 	return &RateLimitResult{
-		Allowed:    true,
-		Limit:      bucketSize,
-		Remaining:  int(newTokens),
-		ResetAt:    now.Add(time.Duration(float64(bucketSize)/t.refillRate) * time.Second).Unix(),
-		Used:       tokensRequested,
+		Allowed:   true,
+		Limit:     bucketSize,
+		Remaining: int(newTokens),
+		ResetAt:   now.Add(time.Duration(float64(bucketSize)/t.refillRate) * time.Second).Unix(),
+		Used:      tokensRequested,
 	}, nil
 }
 
 // QuotaManager manages rate limits across all scopes
 type QuotaManager struct {
-	storage   QuotaStorage
-	keys      *RateKeyBuilder
-	limiter   *SlidingWindowRateLimiter
-	config    *RateLimitConfig
-	tiers     map[RateLimitTier]TierConfig
+	storage QuotaStorage
+	keys    *RateKeyBuilder
+	limiter *SlidingWindowRateLimiter
+	config  *RateLimitConfig
+	tiers   map[RateLimitTier]TierConfig
 }
 
 // NewQuotaManager creates a new quota manager
@@ -469,15 +469,15 @@ func (q *QuotaManager) GetTierStatus(ctx context.Context, tenantID, userID strin
 	}
 
 	return &RateLimitInfo{
-		Limit:              tenantStatus.Limit,
-		Remaining:          remaining,
-		Reset:              tenantStatus.ResetAt,
-		ResetInSeconds:     tenantStatus.ResetInSeconds,
-		Tier:               string(tier),
-		Scope:              string(ScopeTenant),
-		RequestsPerMin:     tierConfig.RequestsPerMin,
-		RequestsPerHour:    tierConfig.RequestsPerHour,
-		RequestsPerDay:     tierConfig.RequestsPerDay,
+		Limit:           tenantStatus.Limit,
+		Remaining:       remaining,
+		Reset:           tenantStatus.ResetAt,
+		ResetInSeconds:  tenantStatus.ResetInSeconds,
+		Tier:            string(tier),
+		Scope:           string(ScopeTenant),
+		RequestsPerMin:  tierConfig.RequestsPerMin,
+		RequestsPerHour: tierConfig.RequestsPerHour,
+		RequestsPerDay:  tierConfig.RequestsPerDay,
 	}, nil
 }
 

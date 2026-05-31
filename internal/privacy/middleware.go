@@ -25,9 +25,9 @@ type FilterMiddlewareConfig struct {
 	Engine         *Engine
 	AuditLogger    AuditLogger
 	Enabled        bool
-	IncludeBody    bool   // Whether to filter request/response body
-	IncludeQuery   bool   // Whether to filter query parameters
-	IncludeHeaders bool   // Whether to filter headers
+	IncludeBody    bool     // Whether to filter request/response body
+	IncludeQuery   bool     // Whether to filter query parameters
+	IncludeHeaders bool     // Whether to filter headers
 	ExcludePaths   []string // Paths to exclude from filtering
 }
 
@@ -405,9 +405,9 @@ func (fc *FilterContext) Filter(ctx context.Context, input string) (string, []De
 
 // ConfigAPI provides REST API endpoints for privacy filter configuration
 type ConfigAPI struct {
-	engine    *Engine
-	recorder  *AuditRecorder
-	mu        sync.RWMutex
+	engine   *Engine
+	recorder *AuditRecorder
+	mu       sync.RWMutex
 }
 
 // NewConfigAPI creates a new configuration API
@@ -420,18 +420,18 @@ func NewConfigAPI(engine *Engine) *ConfigAPI {
 
 // ConfigResponse represents the API response for configuration
 type ConfigResponse struct {
-	EnabledTypes []TypeConfig    `json:"enabled_types"`
-	AllTypes     []TypeConfig    `json:"all_types"`
-	GlobalConfig *FilterConfig   `json:"global_config"`
+	EnabledTypes []TypeConfig           `json:"enabled_types"`
+	AllTypes     []TypeConfig           `json:"all_types"`
+	GlobalConfig *FilterConfig          `json:"global_config"`
 	Stats        map[string]interface{} `json:"stats"`
 }
 
 // TypeConfig represents configuration for a single PII type
 type TypeConfig struct {
 	Type    PIIType `json:"type"`
-	Marker  string `json:"marker"`
-	Enabled bool   `json:"enabled"`
-	Strict  bool   `json:"strict"`
+	Marker  string  `json:"marker"`
+	Enabled bool    `json:"enabled"`
+	Strict  bool    `json:"strict"`
 }
 
 // GetConfig returns the current configuration

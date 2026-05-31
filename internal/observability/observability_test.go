@@ -20,7 +20,7 @@ func TestTracerProvider_Shutdown(t *testing.T) {
 	cfg := Config{
 		ServiceName:    "test-service",
 		ServiceVersion: "1.0.0",
-		OTLPEndpoint:  "",
+		OTLPEndpoint:   "",
 		Enabled:        false,
 	}
 
@@ -40,7 +40,7 @@ func TestInitGlobalTracer(t *testing.T) {
 	cfg := Config{
 		ServiceName:    "test-service",
 		ServiceVersion: "1.0.0",
-		OTLPEndpoint:  "",
+		OTLPEndpoint:   "",
 		Enabled:        false,
 	}
 

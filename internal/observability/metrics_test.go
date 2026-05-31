@@ -205,8 +205,8 @@ func TestSetDatabaseConnected(t *testing.T) {
 
 func TestStatusCodeToString(t *testing.T) {
 	tests := []struct {
-		code    int
-		want    string
+		code int
+		want string
 	}{
 		{200, "2xx"},
 		{201, "2xx"},

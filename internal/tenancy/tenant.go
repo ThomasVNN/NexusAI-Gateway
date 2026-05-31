@@ -7,17 +7,17 @@ import (
 
 // Tenant represents an isolated business unit with organization membership.
 type Tenant struct {
-	ID                 string
-	Slug               string
-	Name               string
-	Environment        string // "local", "development", "staging", "production"
-	Status             string // "active", "suspended", "archived"
-	Plan               string // e.g. "free", "standard", "enterprise"
-	IsActive           bool
-	Settings           map[string]string
-	OrganizationID     string
-	OrganizationSlug   string
-	OrganizationName   string
+	ID               string
+	Slug             string
+	Name             string
+	Environment      string // "local", "development", "staging", "production"
+	Status           string // "active", "suspended", "archived"
+	Plan             string // e.g. "free", "standard", "enterprise"
+	IsActive         bool
+	Settings         map[string]string
+	OrganizationID   string
+	OrganizationSlug string
+	OrganizationName string
 }
 
 // Validate checks if the tenant is in a valid state for processing requests.

@@ -22,17 +22,17 @@ type Metrics struct {
 	ActiveConnections prometheus.Gauge
 
 	// Model metrics
-	ModelCallsTotal      *prometheus.CounterVec
-	ModelCallDuration    *prometheus.HistogramVec
-	ModelTokensTotal     *prometheus.CounterVec
-	ModelErrorsTotal     *prometheus.CounterVec
+	ModelCallsTotal   *prometheus.CounterVec
+	ModelCallDuration *prometheus.HistogramVec
+	ModelTokensTotal  *prometheus.CounterVec
+	ModelErrorsTotal  *prometheus.CounterVec
 
 	// Pipeline metrics
 	PipelineExecutionsTotal *prometheus.CounterVec
-	PipelineDuration       *prometheus.HistogramVec
+	PipelineDuration        *prometheus.HistogramVec
 
 	// System metrics
-	UptimeSeconds    prometheus.Gauge
+	UptimeSeconds     prometheus.Gauge
 	DatabaseConnected prometheus.Gauge
 
 	// Token usage metrics

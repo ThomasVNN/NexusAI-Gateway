@@ -23,14 +23,14 @@ func NewEventHandler(bus eventbus.Bus) *EventHandler {
 
 // PublishRequest represents an event publish request
 type PublishRequest struct {
-	Type         eventbus.EventType     `json:"type"`
-	SourceAgent  string                 `json:"source_agent"`
-	TargetAgent  string                 `json:"target_agent,omitempty"`
-	Payload      json.RawMessage        `json:"payload"`
-	Priority     eventbus.EventPriority `json:"priority,omitempty"`
-	CorrelationID string                `json:"correlation_id,omitempty"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
-	TTL          string                 `json:"ttl,omitempty"`
+	Type          eventbus.EventType     `json:"type"`
+	SourceAgent   string                 `json:"source_agent"`
+	TargetAgent   string                 `json:"target_agent,omitempty"`
+	Payload       json.RawMessage        `json:"payload"`
+	Priority      eventbus.EventPriority `json:"priority,omitempty"`
+	CorrelationID string                 `json:"correlation_id,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	TTL           string                 `json:"ttl,omitempty"`
 }
 
 // PublishResponse represents an event publish response
@@ -107,17 +107,17 @@ func (h *EventHandler) Publish(w http.ResponseWriter, r *http.Request) {
 
 // SubscribeRequest represents an event subscription request
 type SubscribeRequest struct {
-	ClientID   string                  `json:"client_id"`
-	EventTypes []eventbus.EventType    `json:"event_types"`
-	TargetAgent string                 `json:"target_agent,omitempty"`
-	Filter     *eventbus.Filter       `json:"filter,omitempty"`
+	ClientID    string               `json:"client_id"`
+	EventTypes  []eventbus.EventType `json:"event_types"`
+	TargetAgent string               `json:"target_agent,omitempty"`
+	Filter      *eventbus.Filter     `json:"filter,omitempty"`
 }
 
 // SubscribeResponse represents an event subscription response
 type SubscribeResponse struct {
-	Success        bool                     `json:"success"`
-	SubscriptionID string                   `json:"subscription_id,omitempty"`
-	Error          string                   `json:"error,omitempty"`
+	Success        bool   `json:"success"`
+	SubscriptionID string `json:"subscription_id,omitempty"`
+	Error          string `json:"error,omitempty"`
 }
 
 // Subscribe handles POST /v1/events/subscribe - create a subscription
