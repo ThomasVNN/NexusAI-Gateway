@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/ratelimit"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
 	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
@@ -83,6 +85,20 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		adminHandler = handler.NewAdminHandler(nil, nil, memStore, false, cfg.InitialPassword)
 	}
 
+	// 4. Initialize rate limiting
+	rateLimitConfig := ratelimit.DefaultRateLimitConfig()
+	rateLimitConfig.RedisURL = cfg.RedisURL
+
+	quotaStorage, err := ratelimit.CreateRedisStorage(cfg.RedisURL)
+	if err != nil {
+		slog.Warn("Failed to initialize Redis rate limiting storage, using in-memory fallback", slog.Any("error", err))
+		quotaStorage = ratelimit.NewInMemoryStorage()
+	}
+
+	quotaManager := ratelimit.NewQuotaManager(quotaStorage, rateLimitConfig)
+	rateLimitMiddleware := ratelimit.NewRateLimitMiddleware(quotaManager, tenantResolver, rateLimitConfig)
+	rateLimitHandler := handler.NewGetRateLimitsHandler(quotaManager)
+
 	// OpenAI endpoints
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
 	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
@@ -105,6 +121,14 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Auth and login compatibility
 	mux.HandleFunc("/api/auth/login", adminHandler.HandleLogin)
 	mux.HandleFunc("/api/settings/require-login", adminHandler.HandleRequireLogin)
+
+	// Rate Limiting API Endpoints
+	mux.HandleFunc("/v1/rate-limits/status", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/tiers", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/usage", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/reset", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/quota", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/health", rateLimitHandler.ServeHTTP)
 
 	// Diagnostics & Observability endpoints
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +203,9 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	return WithRecovery(
 		WithCorrelationID(
 			WithStructuredLogging(
-				WithRateLimiting(mux),
+				WithRateLimiting(
+					rateLimitMiddleware.Middleware(mux),
+				),
 			),
 		),
 	)
