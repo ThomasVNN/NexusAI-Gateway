@@ -2,8 +2,6 @@ package ratelimit
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -181,33 +179,33 @@ func TestQuotaManager_CheckAllLimits(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name      string
-		tenantID  string
-		userID    string
-		skillID   string
+		name       string
+		tenantID   string
+		userID     string
+		skillID    string
 		apiKeyHash string
-		tier      RateLimitTier
-		wantAllow bool
+		tier       RateLimitTier
+		wantAllow  bool
 	}{
 		{
-			name:      "All identifiers provided",
-			tenantID:  "tenant-1",
-			userID:    "user-1",
-			skillID:   "skill-1",
+			name:       "All identifiers provided",
+			tenantID:   "tenant-1",
+			userID:     "user-1",
+			skillID:    "skill-1",
 			apiKeyHash: "hash-1",
+			tier:       TierFree,
+			wantAllow:  true,
+		},
+		{
+			name:      "Tenant only",
+			tenantID:  "tenant-2",
 			tier:      TierFree,
 			wantAllow: true,
 		},
 		{
-			name:     "Tenant only",
-			tenantID: "tenant-2",
-			tier:     TierFree,
-			wantAllow: true,
-		},
-		{
-			name:     "No identifiers",
-			tenantID: "default-tenant",
-			tier:     TierFree,
+			name:      "No identifiers",
+			tenantID:  "default-tenant",
+			tier:      TierFree,
 			wantAllow: true,
 		},
 	}

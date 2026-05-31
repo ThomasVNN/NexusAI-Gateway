@@ -71,9 +71,9 @@ func TestInMemoryQuotaRepository(t *testing.T) {
 
 	t.Run("SaveQuotaUsage", func(t *testing.T) {
 		usage := &QuotaUsage{
-			TenantID:     "tenant-2",
-			Plan:         "standard",
-			DayRequests:  50,
+			TenantID:    "tenant-2",
+			Plan:        "standard",
+			DayRequests: 50,
 			TokensToday: 5000,
 		}
 		err := repo.SaveQuotaUsage(ctx, usage)
@@ -115,11 +115,11 @@ func TestInMemoryQuotaRepository(t *testing.T) {
 
 	t.Run("ResetHour", func(t *testing.T) {
 		usage := &QuotaUsage{
-			TenantID:        "tenant-4",
-			Plan:            "enterprise",
-			MinuteRequests:  5,
-			HourRequests:    50,
-			LastHourReset:   time.Now().Add(-time.Hour),
+			TenantID:       "tenant-4",
+			Plan:           "enterprise",
+			MinuteRequests: 5,
+			HourRequests:   50,
+			LastHourReset:  time.Now().Add(-time.Hour),
 		}
 		repo.SaveQuotaUsage(ctx, usage)
 
@@ -136,13 +136,13 @@ func TestInMemoryQuotaRepository(t *testing.T) {
 
 	t.Run("ResetDay", func(t *testing.T) {
 		usage := &QuotaUsage{
-			TenantID:        "tenant-5",
-			Plan:            "enterprise",
-			MinuteRequests:  5,
-			HourRequests:    50,
-			DayRequests:     500,
-			TokensToday:     50000,
-			LastDayReset:    time.Now().Add(-24 * time.Hour),
+			TenantID:       "tenant-5",
+			Plan:           "enterprise",
+			MinuteRequests: 5,
+			HourRequests:   50,
+			DayRequests:    500,
+			TokensToday:    50000,
+			LastDayReset:   time.Now().Add(-24 * time.Hour),
 		}
 		repo.SaveQuotaUsage(ctx, usage)
 

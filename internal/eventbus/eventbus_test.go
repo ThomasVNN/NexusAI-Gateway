@@ -186,12 +186,6 @@ func TestLocalEventBus(t *testing.T) {
 		}
 
 		// Subscribe to events
-		sub := &Subscription{
-			ClientID:   "client-1",
-			EventTypes: []EventType{EventTypeIntent, EventTypeDecision},
-			Filter:     nil,
-		}
-
 		cfg := DefaultBusConfig()
 		cfg.Handler = handler
 		bus2, _ := NewBus(context.Background(), cfg)
@@ -572,14 +566,14 @@ func TestGenerateSubscriptionID(t *testing.T) {
 func TestEventBusOrdering(t *testing.T) {
 	t.Run("events are assigned sequence numbers", func(t *testing.T) {
 		cfg := DefaultBusConfig()
-		cfg.EnableOrdering = true
+		cfg.Config.EnableOrdering = true
 		bus, _ := NewBus(context.Background(), cfg)
 		defer bus.Close()
 
 		event := &Event{
-			Type:           EventTypeIntent,
-			SourceAgent:    "agent-1",
-			CorrelationID:  "corr-123",
+			Type:          EventTypeIntent,
+			SourceAgent:   "agent-1",
+			CorrelationID: "corr-123",
 		}
 
 		if err := bus.Publish(context.Background(), event); err != nil {
@@ -595,7 +589,7 @@ func TestEventBusOrdering(t *testing.T) {
 func TestEventBusDLQIntegration(t *testing.T) {
 	t.Run("DLQ receives failed events", func(t *testing.T) {
 		cfg := DefaultBusConfig()
-		cfg.DLQMaxRetries = 2
+		cfg.Config.DLQMaxRetries = 2
 		bus, _ := NewBus(context.Background(), cfg)
 		defer bus.Close()
 
@@ -680,7 +674,7 @@ func TestEventBusMetrics(t *testing.T) {
 
 		m.RecordEventPublished()
 		m.RecordEventPublished()
-		m.RecordEventDelivered()
+		m.RecordEventDelivery()
 		m.RecordEventFailure()
 		m.RecordDLQEntry()
 		m.RecordSubscription()

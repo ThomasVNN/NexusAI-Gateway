@@ -12,8 +12,8 @@ import (
 )
 
 type tenantMiddleware struct {
-	resolver       tenancy.TenantResolver
-	authenticator  auth.Authenticator
+	resolver      tenancy.TenantResolver
+	authenticator auth.Authenticator
 }
 
 // WithTenantResolution injects tenant context into the request.

@@ -8,8 +8,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/router"
 )
 
 // TestConfig holds configuration for E2E tests
@@ -30,14 +28,14 @@ func DefaultTestConfig() *TestConfig {
 
 // GatewayTest represents an E2E test scenario
 type GatewayTest struct {
-	Name        string
-	Description string
-	Method      string
-	Path        string
-	Headers     map[string]string
-	Body        interface{}
+	Name           string
+	Description    string
+	Method         string
+	Path           string
+	Headers        map[string]string
+	Body           interface{}
 	ExpectedStatus int
-	CheckResponse func(*testing.T, *httptest.ResponseRecorder)
+	CheckResponse  func(*testing.T, *httptest.ResponseRecorder)
 }
 
 // RunGatewayTest executes a gateway test scenario
@@ -46,16 +44,7 @@ func RunGatewayTest(t *testing.T, cfg *TestConfig, test *GatewayTest) {
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 		defer cancel()
 
-		var body []byte
-		if test.Body != nil {
-			body, _ = json.Marshal(test.Body)
-		}
-
-		req := httptest.NewRequestWithContext(ctx, test.Method, cfg.GatewayURL+test.Path, nil)
-		if body != nil {
-			req = httptest.NewRequestWithContext(ctx, test.Method, cfg.GatewayURL+test.Path, nil)
-			req.Body = nil
-		}
+		req, _ := http.NewRequestWithContext(ctx, test.Method, cfg.GatewayURL+test.Path, nil)
 
 		for key, value := range test.Headers {
 			req.Header.Set(key, value)
@@ -78,7 +67,7 @@ func RunGatewayTest(t *testing.T, cfg *TestConfig, test *GatewayTest) {
 // createTestHandler creates a test HTTP handler
 func createTestHandler() http.Handler {
 	mux := http.NewServeMux()
-	
+
 	// Health endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -87,7 +76,7 @@ func createTestHandler() http.Handler {
 			"time":   time.Now().Format(time.RFC3339),
 		})
 	})
-	
+
 	// Chat endpoint
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -121,10 +110,10 @@ func TestHealthEndpoint(t *testing.T) {
 	cfg := DefaultTestConfig()
 
 	RunGatewayTest(t, cfg, &GatewayTest{
-		Name:        "Health Check",
-		Description: "Verify health endpoint returns 200",
-		Method:      http.MethodGet,
-		Path:        "/health",
+		Name:           "Health Check",
+		Description:    "Verify health endpoint returns 200",
+		Method:         http.MethodGet,
+		Path:           "/health",
 		ExpectedStatus: http.StatusOK,
 		CheckResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
 			var resp map[string]string
@@ -172,10 +161,10 @@ func TestChatCompletionsValidation(t *testing.T) {
 	cfg := DefaultTestConfig()
 
 	RunGatewayTest(t, cfg, &GatewayTest{
-		Name:        "Invalid Method",
-		Description: "Verify GET method is rejected",
-		Method:      http.MethodGet,
-		Path:        "/v1/chat/completions",
+		Name:           "Invalid Method",
+		Description:    "Verify GET method is rejected",
+		Method:         http.MethodGet,
+		Path:           "/v1/chat/completions",
 		ExpectedStatus: http.StatusMethodNotAllowed,
 	})
 }
@@ -184,13 +173,13 @@ func TestChatCompletionsValidation(t *testing.T) {
 type IntegrationTest struct {
 	Name        string
 	Description string
-	Steps      []IntegrationStep
+	Steps       []IntegrationStep
 }
 
 // IntegrationStep represents a single step in an integration test
 type IntegrationStep struct {
-	Name        string
-	Request     *GatewayTest
+	Name         string
+	Request      *GatewayTest
 	SaveResponse map[string]string // Keys to save from response for later use
 }
 
@@ -208,7 +197,7 @@ func RunIntegrationTest(t *testing.T, cfg *TestConfig, test *IntegrationTest) {
 				// Substitute saved values in path
 				path := step.Request.Path
 				for key, value := range savedValues {
-					path = fmt.Sprintf("%s?%s=%s", 
+					path = fmt.Sprintf("%s?%s=%s",
 						fmt.Sprintf("%s?old=%s", path, "placeholder"),
 						key, value)
 				}
@@ -221,8 +210,9 @@ func RunIntegrationTest(t *testing.T, cfg *TestConfig, test *IntegrationTest) {
 				if step.Request.Body != nil {
 					body, _ = json.Marshal(step.Request.Body)
 				}
+				_ = body
 
-				req := httptest.NewRequestWithContext(ctx, step.Request.Method, cfg.GatewayURL+path, nil)
+				req, _ := http.NewRequestWithContext(ctx, step.Request.Method, cfg.GatewayURL+path, nil)
 				for key, value := range step.Request.Headers {
 					req.Header.Set(key, value)
 				}
@@ -268,15 +258,15 @@ func TestGatewayIntegration(t *testing.T) {
 				Request: &GatewayTest{
 					Method:         http.MethodGet,
 					Path:           "/health",
-					ExpectedStatus:  http.StatusOK,
+					ExpectedStatus: http.StatusOK,
 				},
 			},
 			{
 				Name: "Chat Completion",
 				Request: &GatewayTest{
-					Method:         http.MethodPost,
-					Path:           "/v1/chat/completions",
-					Headers:        map[string]string{"Content-Type": "application/json"},
+					Method:  http.MethodPost,
+					Path:    "/v1/chat/completions",
+					Headers: map[string]string{"Content-Type": "application/json"},
 					Body: map[string]interface{}{
 						"model": "gpt-4",
 						"messages": []map[string]string{

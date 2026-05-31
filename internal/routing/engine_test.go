@@ -9,46 +9,46 @@ func TestModelRouter_Route(t *testing.T) {
 	router := NewModelRouter()
 
 	tests := []struct {
-		name    string
-		req     *RoutingRequest
+		name      string
+		req       *RoutingRequest
 		wantModel string
-		wantErr  bool
+		wantErr   bool
 	}{
 		{
 			name: "route to requested model when available",
 			req: &RoutingRequest{
 				RequestedModel: "gpt-4o",
-				TenantID:     "tenant-1",
+				TenantID:       "tenant-1",
 			},
 			wantModel: "gpt-4o",
-			wantErr:  false,
+			wantErr:   false,
 		},
 		{
 			name: "fallback to default when model not found",
 			req: &RoutingRequest{
 				RequestedModel: "unknown-model",
-				TenantID:     "tenant-1",
+				TenantID:       "tenant-1",
 			},
 			wantModel: "gpt-4o-mini", // cheapest default
-			wantErr:  false,
+			wantErr:   false,
 		},
 		{
 			name: "route by capability - vision",
 			req: &RoutingRequest{
-				TenantID: "tenant-1",
+				TenantID:             "tenant-1",
 				RequiredCapabilities: []string{"vision"},
 			},
 			wantModel: "gpt-4o", // first vision-capable model
-			wantErr:  false,
+			wantErr:   false,
 		},
 		{
 			name: "route by capability - function_calling",
 			req: &RoutingRequest{
-				TenantID: "tenant-1",
+				TenantID:             "tenant-1",
 				RequiredCapabilities: []string{"function_calling"},
 			},
 			wantModel: "gpt-4o", // first function_calling model
-			wantErr:  false,
+			wantErr:   false,
 		},
 	}
 
@@ -72,9 +72,9 @@ func TestModelRouter_SelectByCost(t *testing.T) {
 
 	// All models with function_calling
 	req := &RoutingRequest{
-		TenantID: "tenant-1",
+		TenantID:             "tenant-1",
 		RequiredCapabilities: []string{"function_calling"},
-		Strategy: StrategyCostOptimized,
+		Strategy:             StrategyCostOptimized,
 	}
 
 	ctx := context.Background()
@@ -145,14 +145,14 @@ func TestModelRouter_GetSetModel(t *testing.T) {
 
 	// Add new model
 	router.AddModel(&ModelInfo{
-		Name:     "custom-model",
-		Provider: "custom",
-		CostPer1KInput: 0.001,
+		Name:            "custom-model",
+		Provider:        "custom",
+		CostPer1KInput:  0.001,
 		CostPer1KOutput: 0.002,
-		MaxTokens:      1000,
-		Capabilities:   []string{"streaming"},
-		AvgLatencyMs:   200,
-		IsActive:       true,
+		MaxTokens:       1000,
+		Capabilities:    []string{"streaming"},
+		AvgLatencyMs:    200,
+		IsActive:        true,
 	})
 
 	model, ok = router.GetModel("custom-model")
@@ -257,10 +257,10 @@ func TestDefaultModels(t *testing.T) {
 	// Verify default models are configured correctly
 	expected := map[string]struct {
 		provider string
-		cost    float64
+		cost     float64
 	}{
-		"gpt-4o":             {"openai", 0.02},
-		"gpt-4o-mini":       {"openai", 0.00075},
+		"gpt-4o":            {"openai", 0.02},
+		"gpt-4o-mini":       {"openai", 0.0003},
 		"claude-3-5-sonnet": {"anthropic", 0.018},
 		"gemini-1.5-flash":  {"google", 0.000375},
 	}

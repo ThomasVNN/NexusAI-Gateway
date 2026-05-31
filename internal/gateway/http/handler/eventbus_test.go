@@ -55,6 +55,9 @@ func (m *MockEventBus) Unsubscribe(ctx context.Context, subscriptionID string) e
 	if m.unsubscribeError != nil {
 		return m.unsubscribeError
 	}
+	if _, exists := m.subscriptions[subscriptionID]; !exists {
+		return fmt.Errorf("subscription not found: %s", subscriptionID)
+	}
 	delete(m.subscriptions, subscriptionID)
 	return nil
 }
@@ -88,6 +91,9 @@ func (m *MockEventBus) RetryDLQEntry(ctx context.Context, entryID string) error 
 }
 
 func (m *MockEventBus) PurgeDLQEntry(ctx context.Context, entryID string) error {
+	if _, exists := m.dlqEntries[entryID]; !exists {
+		return fmt.Errorf("DLQ entry not found: %s", entryID)
+	}
 	delete(m.dlqEntries, entryID)
 	return nil
 }

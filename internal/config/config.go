@@ -10,20 +10,30 @@ import (
 
 // Config holds all environmental configurations for the application
 type Config struct {
-	Port                   string
-	PostgresURL            string
-	RedisURL               string
-	JWKSPrivate            string
-	OIDCIssuer             string
-	InitialPassword        string
-	AppEnv                 string // local, development, staging, production
-	UpstreamAPIURL         string
-	UpstreamAPIKey         string
-	EnableSandboxFallback  bool
-	CORSAllowedOrigins     []string
+	Port                  string
+	PostgresURL           string
+	RedisURL              string
+	JWKSPrivate           string
+	OIDCIssuer            string
+	InitialPassword       string
+	AppEnv                string // local, development, staging, production
+	UpstreamAPIURL        string
+	UpstreamAPIKey        string
+	EnableSandboxFallback bool
+	CORSAllowedOrigins    []string
 	// Observability configuration
-	ObservabilityEnabled   bool
-	OTLPEndpoint           string
+	ObservabilityEnabled bool
+	OTLPEndpoint         string
+	// New-API Features
+	EnableRetry        bool
+	MaxRetryCount      int
+	RetryBaseDelayMS   int
+	EnableCache        bool
+	CacheTTLSeconds    int
+	EnableRateLimit    bool
+	RateLimitPerMinute int
+	EnableBilling      bool
+	DefaultCurrency    string
 }
 
 // UnsafeDefaults contains known unsafe default values for detection
@@ -95,19 +105,57 @@ func Load() *Config {
 	}
 	otlpEndpoint := os.Getenv("OTLP_ENDPOINT")
 
+	// New-API feature configuration
+	enableRetry := os.Getenv("ENABLE_RETRY") != "false" // Default enabled
+	maxRetryCount, _ := strconv.Atoi(os.Getenv("MAX_RETRY_COUNT"))
+	if maxRetryCount == 0 {
+		maxRetryCount = 3
+	}
+	retryBaseDelayMS, _ := strconv.Atoi(os.Getenv("RETRY_BASE_DELAY_MS"))
+	if retryBaseDelayMS == 0 {
+		retryBaseDelayMS = 100
+	}
+
+	enableCache := os.Getenv("ENABLE_CACHE") == "true"
+	cacheTTLSeconds, _ := strconv.Atoi(os.Getenv("CACHE_TTL_SECONDS"))
+	if cacheTTLSeconds == 0 {
+		cacheTTLSeconds = 300 // 5 minutes
+	}
+
+	enableRateLimit := os.Getenv("ENABLE_RATE_LIMIT") != "false" // Default enabled
+	rateLimitPerMinute, _ := strconv.Atoi(os.Getenv("RATE_LIMIT_PER_MINUTE"))
+	if rateLimitPerMinute == 0 {
+		rateLimitPerMinute = 60
+	}
+
+	enableBilling := os.Getenv("ENABLE_BILLING") == "true"
+	defaultCurrency := os.Getenv("DEFAULT_CURRENCY")
+	if defaultCurrency == "" {
+		defaultCurrency = "USD"
+	}
+
 	return &Config{
-		Port:                    port,
-		PostgresURL:             postgresURL,
-		RedisURL:                redisURL,
-		OIDCIssuer:              oidcIssuer,
-		InitialPassword:         initialPassword,
-		AppEnv:                  appEnv,
-		UpstreamAPIURL:          upstreamAPIURL,
-		UpstreamAPIKey:          upstreamAPIKey,
-		EnableSandboxFallback:   enableSandboxFallback,
-		CORSAllowedOrigins:      corsOrigins,
-		ObservabilityEnabled:    observabilityEnabled,
-		OTLPEndpoint:            otlpEndpoint,
+		Port:                  port,
+		PostgresURL:           postgresURL,
+		RedisURL:              redisURL,
+		OIDCIssuer:            oidcIssuer,
+		InitialPassword:       initialPassword,
+		AppEnv:                appEnv,
+		UpstreamAPIURL:        upstreamAPIURL,
+		UpstreamAPIKey:        upstreamAPIKey,
+		EnableSandboxFallback: enableSandboxFallback,
+		CORSAllowedOrigins:    corsOrigins,
+		ObservabilityEnabled:  observabilityEnabled,
+		OTLPEndpoint:          otlpEndpoint,
+		EnableRetry:           enableRetry,
+		MaxRetryCount:         maxRetryCount,
+		RetryBaseDelayMS:      retryBaseDelayMS,
+		EnableCache:           enableCache,
+		CacheTTLSeconds:       cacheTTLSeconds,
+		EnableRateLimit:       enableRateLimit,
+		RateLimitPerMinute:    rateLimitPerMinute,
+		EnableBilling:         enableBilling,
+		DefaultCurrency:       defaultCurrency,
 	}
 }
 

@@ -56,9 +56,9 @@ func TestAuthentication(t *testing.T) {
 	handler := createTestHandler()
 
 	tests := []struct {
-		name          string
-		headers       map[string]string
-		expectedAuth  bool
+		name         string
+		headers      map[string]string
+		expectedAuth bool
 	}{
 		{
 			name:         "No Auth",

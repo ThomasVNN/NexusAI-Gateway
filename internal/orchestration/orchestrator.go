@@ -347,7 +347,7 @@ func (o *Orchestrator) CancelChain(id string) error {
 		return fmt.Errorf("chain not found: %s", id)
 	}
 
-	if chain.Status != ChainStatusRunning {
+	if chain.Status != ChainStatusPending && chain.Status != ChainStatusRunning {
 		return fmt.Errorf("chain not running: %s", id)
 	}
 

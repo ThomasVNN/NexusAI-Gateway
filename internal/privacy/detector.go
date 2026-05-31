@@ -9,21 +9,21 @@ import (
 type PIIType string
 
 const (
-	PIITypeEmail       PIIType = "email"
-	PIITypePhone       PIIType = "phone"
-	PIITypeSSN         PIIType = "ssn"
-	PIITypeCreditCard  PIIType = "credit_card"
-	PIITypeIPAddress   PIIType = "ip_address"
-	PIITypeCustom      PIIType = "custom"
+	PIITypeEmail      PIIType = "email"
+	PIITypePhone      PIIType = "phone"
+	PIITypeSSN        PIIType = "ssn"
+	PIITypeCreditCard PIIType = "credit_card"
+	PIITypeIPAddress  PIIType = "ip_address"
+	PIITypeCustom     PIIType = "custom"
 )
 
 // PIIPattern defines a regex pattern for detecting specific PII types
 type PIIPattern struct {
-	Type      PIIType
-	Pattern   *regexp.Regexp
-	Marker    string
-	Enabled   bool
-	Strict    bool
+	Type    PIIType
+	Pattern *regexp.Regexp
+	Marker  string
+	Enabled bool
+	Strict  bool
 }
 
 // Detector provides PII detection capabilities with configurable patterns

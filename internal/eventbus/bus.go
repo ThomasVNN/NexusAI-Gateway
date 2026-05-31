@@ -72,11 +72,11 @@ func DefaultBusConfig() *BusConfig {
 type localEventBus struct {
 	config     *BusConfig
 	logger     *slog.Logger
-	subs       map[string]*Subscription       // subscriptionID -> subscription
+	subs       map[string]*Subscription      // subscriptionID -> subscription
 	subTopics  map[EventType]map[string]bool // eventType -> set of subscriptionIDs
-	handlers   map[string]EventHandler        // subscriptionID -> handler
+	handlers   map[string]EventHandler       // subscriptionID -> handler
 	dlq        map[string]*DLQEntry          // entryID -> DLQ entry
-	eventOrder *EventSequencer                // for ordering guarantees
+	eventOrder *EventSequencer               // for ordering guarantees
 	mu         sync.RWMutex
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -97,15 +97,15 @@ func NewBus(ctx context.Context, cfg *BusConfig) (Bus, error) {
 	childCtx, cancel := context.WithCancel(ctx)
 
 	bus := &localEventBus{
-		config:    cfg,
-		logger:    cfg.Logger,
-		subs:      make(map[string]*Subscription),
-		subTopics: make(map[EventType]map[string]bool),
-		handlers:  make(map[string]EventHandler),
-		dlq:       make(map[string]*DLQEntry),
+		config:     cfg,
+		logger:     cfg.Logger,
+		subs:       make(map[string]*Subscription),
+		subTopics:  make(map[EventType]map[string]bool),
+		handlers:   make(map[string]EventHandler),
+		dlq:        make(map[string]*DLQEntry),
 		eventOrder: NewEventSequencer(),
-		ctx:       childCtx,
-		cancel:    cancel,
+		ctx:        childCtx,
+		cancel:     cancel,
 	}
 
 	// Initialize topic maps for all event types

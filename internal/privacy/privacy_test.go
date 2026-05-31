@@ -83,10 +83,10 @@ func TestDetector_DetectSSN(t *testing.T) {
 	detector := NewDetector()
 
 	tests := []struct {
-		name      string
-		input     string
-		expected  int
-		verified  int
+		name     string
+		input    string
+		expected int
+		verified int
 	}{
 		{"valid SSN", "My SSN is 123-45-6789", 1, 1},
 		{"invalid SSN area 000", "SSN: 000-45-6789", 1, 0},
@@ -268,7 +268,7 @@ func TestValidateLuhn(t *testing.T) {
 		{"1234567812345678", false}, // Invalid Luhn
 		{"4111111111111112", false}, // Wrong check digit
 		{"1234", false},             // Too short
-		{"", false},                // Empty
+		{"", false},                 // Empty
 	}
 
 	for _, tt := range tests {
@@ -294,7 +294,7 @@ func TestValidateSSN(t *testing.T) {
 		{"123-00-6789", false}, // Invalid group 00
 		{"123-45-0000", false}, // Invalid serial 0000
 		{"123456789", false},   // No dashes
-		{"", false},           // Empty
+		{"", false},            // Empty
 	}
 
 	for _, tt := range tests {
@@ -574,7 +574,7 @@ func TestParsePrivacyLevel(t *testing.T) {
 		{"high", PrivacyLevelHigh},
 		{"strict", PrivacyLevelStrict},
 		{"unknown", PrivacyLevelMedium}, // Default
-		{"", PrivacyLevelMedium},       // Default
+		{"", PrivacyLevelMedium},        // Default
 	}
 
 	for _, tt := range tests {

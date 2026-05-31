@@ -40,10 +40,10 @@ func (h *LoggingEventHandler) Handle(ctx context.Context, event *Event) error {
 
 // EventMetrics tracks event bus metrics
 type EventMetrics struct {
-	EventsPublished    atomic.Int64
-	EventsDelivered    atomic.Int64
-	EventsFailed       atomic.Int64
-	DLQEntries        atomic.Int64
+	EventsPublished     atomic.Int64
+	EventsDelivered     atomic.Int64
+	EventsFailed        atomic.Int64
+	DLQEntries          atomic.Int64
 	ActiveSubscriptions atomic.Int64
 }
 

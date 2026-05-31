@@ -128,13 +128,13 @@ func TestBenchmarkMetrics(t *testing.T) {
 func TestCompareResults(t *testing.T) {
 	t.Run("Compare different results", func(t *testing.T) {
 		a := &BenchmarkResult{
-			Name:        "A",
-			MeanLatency: 100 * time.Millisecond,
+			Name:         "A",
+			MeanLatency:  100 * time.Millisecond,
 			OpsPerSecond: 100,
 		}
 		b := &BenchmarkResult{
-			Name:        "B",
-			MeanLatency: 50 * time.Millisecond,
+			Name:         "B",
+			MeanLatency:  50 * time.Millisecond,
 			OpsPerSecond: 200,
 		}
 
@@ -169,10 +169,10 @@ func TestPerformanceThresholds(t *testing.T) {
 	t.Run("Within thresholds", func(t *testing.T) {
 		thresholds := DefaultThresholds()
 		result := &BenchmarkResult{
-			MeanLatency: 100 * time.Millisecond,
+			MeanLatency:  100 * time.Millisecond,
 			OpsPerSecond: 50,
 			SuccessCount: 99,
-			ErrorCount: 1,
+			ErrorCount:   1,
 		}
 
 		if !thresholds.IsAcceptable(result) {
@@ -183,7 +183,7 @@ func TestPerformanceThresholds(t *testing.T) {
 	t.Run("Exceeds latency threshold", func(t *testing.T) {
 		thresholds := DefaultThresholds()
 		result := &BenchmarkResult{
-			MeanLatency: 1000 * time.Millisecond,
+			MeanLatency:  1000 * time.Millisecond,
 			OpsPerSecond: 50,
 		}
 
@@ -195,7 +195,7 @@ func TestPerformanceThresholds(t *testing.T) {
 	t.Run("Below ops threshold", func(t *testing.T) {
 		thresholds := DefaultThresholds()
 		result := &BenchmarkResult{
-			MeanLatency: 100 * time.Millisecond,
+			MeanLatency:  100 * time.Millisecond,
 			OpsPerSecond: 5,
 		}
 
@@ -207,10 +207,10 @@ func TestPerformanceThresholds(t *testing.T) {
 	t.Run("Too many errors", func(t *testing.T) {
 		thresholds := DefaultThresholds()
 		result := &BenchmarkResult{
-			MeanLatency: 100 * time.Millisecond,
+			MeanLatency:  100 * time.Millisecond,
 			OpsPerSecond: 50,
 			SuccessCount: 50,
-			ErrorCount: 50,
+			ErrorCount:   50,
 		}
 
 		if thresholds.IsAcceptable(result) {

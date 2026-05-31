@@ -7,21 +7,21 @@ import (
 
 // RegisteredKey represents an authorized client API key
 type RegisteredKey struct {
-	ID          string         `json:"id"`
-	KeyHash     string         `json:"key_hash"`
-	KeyPrefix   string         `json:"key_prefix"`
-	Name        string         `json:"name"`
-	SourceApp   string         `json:"source_app"` // tenant_id
-	DailyQuota  int            `json:"daily_quota"`
-	HourlyQuota int            `json:"hourly_quota"`
-	Scopes      []string       `json:"scopes"`
-	ExpiresAt   sql.NullTime  `json:"expires_at"`
-	RevokedAt   sql.NullTime  `json:"revoked_at"`
-	CreatedBy   string         `json:"created_by"`
-	Active      bool           `json:"active"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	LastUsedAt  sql.NullTime   `json:"last_used_at"`
+	ID          string       `json:"id"`
+	KeyHash     string       `json:"key_hash"`
+	KeyPrefix   string       `json:"key_prefix"`
+	Name        string       `json:"name"`
+	SourceApp   string       `json:"source_app"` // tenant_id
+	DailyQuota  int          `json:"daily_quota"`
+	HourlyQuota int          `json:"hourly_quota"`
+	Scopes      []string     `json:"scopes"`
+	ExpiresAt   sql.NullTime `json:"expires_at"`
+	RevokedAt   sql.NullTime `json:"revoked_at"`
+	CreatedBy   string       `json:"created_by"`
+	Active      bool         `json:"active"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+	LastUsedAt  sql.NullTime `json:"last_used_at"`
 }
 
 // IsExpired checks if the key has expired.

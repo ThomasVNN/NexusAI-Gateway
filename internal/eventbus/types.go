@@ -19,11 +19,11 @@ const (
 type EventType string
 
 const (
-	EventTypeIntent    EventType = "agent.intent"     // Agent intends to take action
-	EventTypeDecision  EventType = "agent.decision"   // Agent made a decision
-	EventTypeApproval  EventType = "agent.approval"   // Human approved action
-	EventTypeRejection EventType = "agent.rejection"  // Human rejected action
-	EventTypeError     EventType = "agent.error"      // Agent encountered error
+	EventTypeIntent    EventType = "agent.intent"    // Agent intends to take action
+	EventTypeDecision  EventType = "agent.decision"  // Agent made a decision
+	EventTypeApproval  EventType = "agent.approval"  // Human approved action
+	EventTypeRejection EventType = "agent.rejection" // Human rejected action
+	EventTypeError     EventType = "agent.error"     // Agent encountered error
 )
 
 // Event represents a structured event in the agent communication system
@@ -60,13 +60,13 @@ func NewEvent(eventType EventType, sourceAgent string, payload interface{}, prio
 	}
 
 	return &Event{
-		ID:           generateEventID(),
-		Type:         eventType,
-		Priority:     priority,
-		SourceAgent:  sourceAgent,
-		Payload:      payloadBytes,
-		Metadata:     make(map[string]interface{}),
-		Timestamp:    time.Now().UTC(),
+		ID:          generateEventID(),
+		Type:        eventType,
+		Priority:    priority,
+		SourceAgent: sourceAgent,
+		Payload:     payloadBytes,
+		Metadata:    make(map[string]interface{}),
+		Timestamp:   time.Now().UTC(),
 	}, nil
 }
 
@@ -138,35 +138,35 @@ func (e *Event) String() string {
 
 // IntentPayload represents the payload for agent.intent events
 type IntentPayload struct {
-	Action       string                 `json:"action"`
-	Resource     string                 `json:"resource"`
-	Reason       string                 `json:"reason,omitempty"`
-	Parameters   map[string]interface{} `json:"parameters,omitempty"`
-	EstimatedImpact string               `json:"estimated_impact,omitempty"`
+	Action          string                 `json:"action"`
+	Resource        string                 `json:"resource"`
+	Reason          string                 `json:"reason,omitempty"`
+	Parameters      map[string]interface{} `json:"parameters,omitempty"`
+	EstimatedImpact string                 `json:"estimated_impact,omitempty"`
 }
 
 // DecisionPayload represents the payload for agent.decision events
 type DecisionPayload struct {
-	Decision    string                 `json:"decision"`
-	Options     []string               `json:"options,omitempty"`
-	ChosenOption string                `json:"chosen_option,omitempty"`
-	Confidence  float64                `json:"confidence,omitempty"`
-	Reasoning   string                 `json:"reasoning,omitempty"`
+	Decision     string   `json:"decision"`
+	Options      []string `json:"options,omitempty"`
+	ChosenOption string   `json:"chosen_option,omitempty"`
+	Confidence   float64  `json:"confidence,omitempty"`
+	Reasoning    string   `json:"reasoning,omitempty"`
 }
 
 // ApprovalPayload represents the payload for agent.approval events
 type ApprovalPayload struct {
-	IntentID    string `json:"intent_id"`
-	Approver    string `json:"approver"`
-	Comments    string `json:"comments,omitempty"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	IntentID  string     `json:"intent_id"`
+	Approver  string     `json:"approver"`
+	Comments  string     `json:"comments,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // RejectionPayload represents the payload for agent.rejection events
 type RejectionPayload struct {
-	IntentID    string `json:"intent_id"`
-	Rejector    string `json:"rejector"`
-	Reason      string `json:"reason"`
+	IntentID     string   `json:"intent_id"`
+	Rejector     string   `json:"rejector"`
+	Reason       string   `json:"reason"`
 	Alternatives []string `json:"alternatives,omitempty"`
 }
 
@@ -217,10 +217,10 @@ type DLQEntry struct {
 type DLQStatus string
 
 const (
-	DLQStatusPending    DLQStatus = "pending"    // Awaiting retry
-	DLQStatusRetrying   DLQStatus = "retrying"  // Currently retrying
-	DLQStatusDead       DLQStatus = "dead"      // Exceeded max retries
-	DLQStatusProcessed  DLQStatus = "processed"  // Successfully processed after retry
+	DLQStatusPending   DLQStatus = "pending"   // Awaiting retry
+	DLQStatusRetrying  DLQStatus = "retrying"  // Currently retrying
+	DLQStatusDead      DLQStatus = "dead"      // Exceeded max retries
+	DLQStatusProcessed DLQStatus = "processed" // Successfully processed after retry
 )
 
 // NewDLQEntry creates a new DLQ entry from a failed event
@@ -288,13 +288,13 @@ type EventBusConfig struct {
 
 // NATSConfig holds NATS JetStream configuration
 type NATSConfig struct {
-	URLs           []string // NATS server URLs
-	StreamName     string   // JetStream stream name
-	ConsumerName   string   // Consumer name
-	MaxBytes       int64    // Maximum message size
-	AckWait        time.Duration
-	MaxDeliver     int
-	ReplayPolicy   string // "instant", "original", "last"
+	URLs         []string // NATS server URLs
+	StreamName   string   // JetStream stream name
+	ConsumerName string   // Consumer name
+	MaxBytes     int64    // Maximum message size
+	AckWait      time.Duration
+	MaxDeliver   int
+	ReplayPolicy string // "instant", "original", "last"
 }
 
 // KafkaConfig holds Kafka configuration

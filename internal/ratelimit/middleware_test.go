@@ -305,7 +305,7 @@ func TestRateLimitMiddleware_GetTier(t *testing.T) {
 	middleware := NewRateLimitMiddleware(manager, resolver, config)
 
 	tests := []struct {
-		name      string
+		name     string
 		plan     string
 		expected RateLimitTier
 	}{
@@ -561,8 +561,8 @@ func TestRateLimitMiddleware_DifferentTiers(t *testing.T) {
 	handler := middleware.Middleware(nextHandler)
 
 	tiers := []struct {
-		tier   RateLimitTier
-		limit  int
+		tier  RateLimitTier
+		limit int
 	}{
 		{TierFree, 10},
 		{TierPro, 100},
