@@ -145,5 +145,37 @@ export default {
       },
     },
   },
+      /* Custom Widths */
+      width: {
+        '18': '4.5rem',
+        '88': '22rem',
+      },
+
+      /* Custom Heights */
+      height: {
+        '18': '4.5rem',
+      },
+
+      /* Light theme colors */
+      '.light': {
+        '--color-bg-primary': '#FFFFFF',
+        '--color-bg-secondary': '#F4F4F5',
+        '--color-bg-tertiary': '#FAFAFA',
+        '--color-bg-elevated': '#F4F4F5',
+        '--color-bg-muted': '#E4E4E7',
+        '--color-accent-primary': '#8B5CF6',
+        '--color-accent-secondary': '#A78BFA',
+        '--color-accent-tertiary': '#C4B5FD',
+        '--color-text-primary': '#18181B',
+        '--color-text-secondary': '#71717A',
+        '--color-text-tertiary': '#A1A1AA',
+        '--color-text-muted': '#D4D4D8',
+        '--color-border-subtle': '#E4E4E7',
+        '--color-border-default': '#D4D4D8',
+        '--color-border-strong': '#A1A1AA',
+        '--color-border-focus': '#8B5CF6',
+      },
+    },
+  },
   plugins: [],
 }
