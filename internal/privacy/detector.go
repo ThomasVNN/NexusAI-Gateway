@@ -51,8 +51,8 @@ var (
 	// SSN pattern: XXX-XX-XXXX format
 	ssnPattern = regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)
 
-	// Credit card pattern: supports 13-19 digits with various separators
-	creditCardPattern = regexp.MustCompile(`\b(?:\d[ -]*?){13,19}\b`)
+	// Credit card pattern: supports 13-19 digit cards with various separators (Visa, MC, Amex, etc.)
+	creditCardPattern = regexp.MustCompile(`\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12}|(?:[0-9]{4}[ -]?){3}[0-9]{4})\b`)
 
 	// IPv4 pattern
 	ipv4Pattern = regexp.MustCompile(`\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b`)
@@ -224,7 +224,17 @@ func validateLuhn(card string) bool {
 
 // validateSSN performs basic SSN validation
 func validateSSN(ssn string) bool {
-	// Remove dashes
+	// SSN must be in XXX-XX-XXXX format with dashes
+	if len(ssn) != 11 {
+		return false
+	}
+
+	// Check format: XXX-XX-XXXX
+	if ssn[3] != '-' || ssn[6] != '-' {
+		return false
+	}
+
+	// Remove dashes for digit validation
 	digits := strings.ReplaceAll(ssn, "-", "")
 
 	// Must be exactly 9 digits

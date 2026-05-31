@@ -80,21 +80,13 @@ func (s *InMemoryStorage) GetCountWithWindow(ctx context.Context, key string, wi
 	// Count all entries for this key within the window
 	count := int64(0)
 	for k, entry := range s.data {
-		// Check if key starts with the requested key prefix
-		if len(k) < len(key) {
-			continue
-		}
-		if k[:len(key)] != key {
+		// Check if key matches exactly (not prefix)
+		if k != key {
 			continue
 		}
 		if entry.Timestamp.After(windowStart) && entry.Timestamp.Before(windowEnd.Add(time.Second)) {
 			count += entry.Count
 		}
-	}
-
-	// Also check counters
-	if counterCount, exists := s.counters[key]; exists {
-		count = counterCount
 	}
 
 	return count, nil

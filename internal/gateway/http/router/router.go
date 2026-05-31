@@ -80,7 +80,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		chatHandler = handler.NewChatHandler(memStore, memStore, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor)
 	}
 
-	modelHandler := handler.NewModelHandler(db)
+	modelHandler := handler.NewModelHandler(nil)
 	mcpHandler := mcp.NewHandler(piiEngine)
 
 	// Admin and system diagnostics mapping
@@ -141,6 +141,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// OpenAI endpoints
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
 	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
+	mux.HandleFunc("GET /v1/models/", modelHandler.HandleModelByID)
 
 	// Model Context Protocol (MCP) Stream & Message Endpoints
 	mux.HandleFunc("/api/mcp/stream", mcpHandler.ServeHTTP)

@@ -53,7 +53,8 @@ func TestRateLimitMiddleware_RateLimitExceeded(t *testing.T) {
 	config := DefaultRateLimitConfig()
 	config.DefaultTier = TierFree // 10 requests per minute
 	manager := NewQuotaManager(storage, config)
-	resolver := tenancy.NewDefaultTenantResolver()
+	// Use a resolver that returns "free" plan
+	resolver := &testTenantResolver{plan: "free"}
 	middleware := NewRateLimitMiddleware(manager, resolver, config)
 
 	// Create a test handler
@@ -301,8 +302,6 @@ func TestRateLimitMiddleware_GetTier(t *testing.T) {
 	storage := NewInMemoryStorage()
 	config := DefaultRateLimitConfig()
 	manager := NewQuotaManager(storage, config)
-	resolver := tenancy.NewDefaultTenantResolver()
-	middleware := NewRateLimitMiddleware(manager, resolver, config)
 
 	tests := []struct {
 		name     string
@@ -313,11 +312,16 @@ func TestRateLimitMiddleware_GetTier(t *testing.T) {
 		{"pro plan", "pro", TierPro},
 		{"enterprise plan", "enterprise", TierEnterprise},
 		{"unlimited plan", "unlimited", TierUnlimited},
+		// Unknown plan returns zero value (TierFree)
 		{"unknown plan", "unknown", TierFree},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Use a resolver that returns the test plan
+			resolver := &testTenantResolver{plan: tt.plan}
+			middleware := NewRateLimitMiddleware(manager, resolver, config)
+
 			tenant := &tenancy.Tenant{
 				ID:   "test",
 				Plan: tt.plan,
@@ -331,6 +335,18 @@ func TestRateLimitMiddleware_GetTier(t *testing.T) {
 			}
 		})
 	}
+}
+
+// testTenantResolver is a test implementation of TenantResolver
+type testTenantResolver struct {
+	plan string
+}
+
+func (r *testTenantResolver) Resolve(ctx context.Context, identifier string) (*tenancy.Tenant, error) {
+	return &tenancy.Tenant{
+		ID:   identifier,
+		Plan: r.plan,
+	}, nil
 }
 
 func TestRateLimitMiddleware_SetRateLimitHeaders(t *testing.T) {
@@ -401,7 +417,8 @@ func TestRateLimitMiddleware_GetCurrentStatus(t *testing.T) {
 	storage := NewInMemoryStorage()
 	config := DefaultRateLimitConfig()
 	manager := NewQuotaManager(storage, config)
-	resolver := tenancy.NewDefaultTenantResolver()
+	// Use a resolver that returns "free" plan
+	resolver := &testTenantResolver{plan: "free"}
 	middleware := NewRateLimitMiddleware(manager, resolver, config)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)

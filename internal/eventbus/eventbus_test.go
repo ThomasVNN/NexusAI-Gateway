@@ -506,8 +506,9 @@ func TestEventSequencer(t *testing.T) {
 			t.Error("expected sequence to be reset for p1")
 		}
 
-		if seq.GetCurrent("p2") != 2 {
-			t.Errorf("expected sequence p2=2, got %d", seq.GetCurrent("p2"))
+		// After one Next("p2") call, p2 should be 1
+		if seq.GetCurrent("p2") != 1 {
+			t.Errorf("expected sequence p2=1, got %d", seq.GetCurrent("p2"))
 		}
 	})
 }

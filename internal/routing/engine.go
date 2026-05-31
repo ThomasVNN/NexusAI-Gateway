@@ -2,23 +2,12 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 )
 
-// RoutingStrategy defines how to select the optimal model
-type RoutingStrategy string
-
-const (
-	// StrategyCostOptimized prioritizes cheaper models
-	StrategyCostOptimized RoutingStrategy = "cost_optimized"
-	// StrategyLatencyOptimized prioritizes faster models
-	StrategyLatencyOptimized RoutingStrategy = "latency_optimized"
-	// StrategyCapabilityOptimized prioritizes more capable models
-	StrategyCapabilityOptimized RoutingStrategy = "capability_optimized"
-)
-
-// ModelInfo holds metadata about a model
+// ModelInfo holds metadata about a model (extended from routing.go)
 type ModelInfo struct {
 	Name            string
 	Provider        string
@@ -29,6 +18,13 @@ type ModelInfo struct {
 	AvgLatencyMs    int64
 	Priority        int
 	IsActive        bool
+	Weight          float64
+	RequestCount    int64
+	QuotaRemaining  float64
+	QuotaResetAt    int64
+	SuccessRate     float64
+	LastUsedAt      int64
+	HealthStatus    string
 }
 
 // DefaultModels provides the standard model catalog
@@ -43,6 +39,10 @@ var DefaultModels = map[string]*ModelInfo{
 		AvgLatencyMs:    1000,
 		Priority:        1,
 		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.95,
+		HealthStatus:    "healthy",
 	},
 	"gpt-4o-mini": {
 		Name:            "gpt-4o-mini",
@@ -54,6 +54,10 @@ var DefaultModels = map[string]*ModelInfo{
 		AvgLatencyMs:    500,
 		Priority:        2,
 		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.97,
+		HealthStatus:    "healthy",
 	},
 	"gpt-4-turbo": {
 		Name:            "gpt-4-turbo",
@@ -65,6 +69,10 @@ var DefaultModels = map[string]*ModelInfo{
 		AvgLatencyMs:    1500,
 		Priority:        3,
 		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.94,
+		HealthStatus:    "healthy",
 	},
 	"claude-3-5-sonnet": {
 		Name:            "claude-3-5-sonnet",
@@ -76,6 +84,10 @@ var DefaultModels = map[string]*ModelInfo{
 		AvgLatencyMs:    1200,
 		Priority:        1,
 		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.96,
+		HealthStatus:    "healthy",
 	},
 	"claude-3-5-haiku": {
 		Name:            "claude-3-5-haiku",
@@ -87,6 +99,10 @@ var DefaultModels = map[string]*ModelInfo{
 		AvgLatencyMs:    400,
 		Priority:        2,
 		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.98,
+		HealthStatus:    "healthy",
 	},
 	"gemini-1.5-pro": {
 		Name:            "gemini-1.5-pro",
@@ -98,6 +114,10 @@ var DefaultModels = map[string]*ModelInfo{
 		AvgLatencyMs:    800,
 		Priority:        1,
 		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.95,
+		HealthStatus:    "healthy",
 	},
 	"gemini-1.5-flash": {
 		Name:            "gemini-1.5-flash",
@@ -109,6 +129,55 @@ var DefaultModels = map[string]*ModelInfo{
 		AvgLatencyMs:    300,
 		Priority:        2,
 		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.97,
+		HealthStatus:    "healthy",
+	},
+	"deepseek-chat": {
+		Name:            "deepseek-chat",
+		Provider:        "deepseek",
+		CostPer1KInput:  0.00027,
+		CostPer1KOutput: 0.0011,
+		MaxTokens:       64000,
+		Capabilities:    []string{"chat", "function_calling", "streaming"},
+		AvgLatencyMs:    600,
+		Priority:        1,
+		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.93,
+		HealthStatus:    "healthy",
+	},
+	"groq-llama-3.1-8b-instant": {
+		Name:            "groq-llama-3.1-8b-instant",
+		Provider:        "groq",
+		CostPer1KInput:  0,
+		CostPer1KOutput: 0,
+		MaxTokens:       8192,
+		Capabilities:    []string{"chat", "function_calling", "streaming"},
+		AvgLatencyMs:    150,
+		Priority:        1,
+		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.98,
+		HealthStatus:    "healthy",
+	},
+	"mistral-large": {
+		Name:            "mistral-large",
+		Provider:        "mistral",
+		CostPer1KInput:  0.002,
+		CostPer1KOutput: 0.006,
+		MaxTokens:       128000,
+		Capabilities:    []string{"chat", "function_calling", "streaming"},
+		AvgLatencyMs:    900,
+		Priority:        1,
+		IsActive:        true,
+		Weight:          1.0,
+		QuotaRemaining:  1.0,
+		SuccessRate:     0.94,
+		HealthStatus:    "healthy",
 	},
 }
 
@@ -116,6 +185,7 @@ var DefaultModels = map[string]*ModelInfo{
 type ModelRouter struct {
 	mu         sync.RWMutex
 	models     map[string]*ModelInfo
+	scoring    *ScoringEngine
 	strategies map[string]RoutingStrategy
 }
 
@@ -123,6 +193,7 @@ type ModelRouter struct {
 func NewModelRouter() *ModelRouter {
 	return &ModelRouter{
 		models:     DefaultModels,
+		scoring:    NewScoringEngine(),
 		strategies: make(map[string]RoutingStrategy),
 	}
 }
@@ -132,43 +203,61 @@ func (r *ModelRouter) Route(ctx context.Context, req *RoutingRequest) (*RouteTar
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Determine routing strategy
-	strategy := r.getStrategy(req.TenantID, req.Strategy)
-
-	// Find candidates that support the requested capabilities
-	candidates := r.findCandidates(req)
-
-	if len(candidates) == 0 {
-		slog.WarnContext(ctx, "No model candidates found",
-			slog.String("requested_model", req.RequestedModel),
-			slog.Any("capabilities", req.RequiredCapabilities),
-		)
-		return nil, ErrNoModelAvailable
+	// If specific model requested and available, always prioritize it
+	if req.RequestedModel != "" {
+		if model, ok := r.models[req.RequestedModel]; ok && model.IsActive {
+			if hasCapabilities(model, req.RequiredCapabilities) {
+				// Check latency constraint if specified
+				if req.MaxLatencyMs > 0 && model.AvgLatencyMs > req.MaxLatencyMs {
+					slog.WarnContext(ctx, "Requested model exceeds latency constraint",
+						slog.String("model", model.Name),
+						slog.Int64("latency", model.AvgLatencyMs),
+						slog.Int64("max_latency", req.MaxLatencyMs),
+					)
+				} else {
+					slog.InfoContext(ctx, "Model routed to explicitly requested",
+						slog.String("requested_model", req.RequestedModel),
+						slog.String("provider", model.Provider),
+						slog.String("tenant_id", req.TenantID),
+					)
+					return &RouteTarget{
+						ModelID:    model.Name,
+						ProviderID: model.Provider,
+						Strategy:   StrategyPriority,
+					}, nil
+				}
+			}
+		}
+		// If requested model not available, continue with fallback selection
 	}
 
-	// Select best candidate based on strategy
-	selected := r.selectBest(candidates, strategy)
+	// Determine routing strategy
+	var strategy RoutingStrategy
+	if req.Strategy != "" {
+		strategy = RoutingStrategy(req.Strategy)
+	}
+
+	// Route using the appropriate strategy
+	target, err := r.RouteByStrategy(ctx, req, strategy)
+	if err != nil {
+		return nil, err
+	}
 
 	slog.InfoContext(ctx, "Model routed",
-		slog.String("strategy", string(strategy)),
-		slog.String("selected_model", selected.Name),
-		slog.String("provider", selected.Provider),
+		slog.String("strategy", string(target.Strategy)),
+		slog.String("selected_model", target.ModelID),
+		slog.String("provider", target.ProviderID),
 		slog.String("tenant_id", req.TenantID),
 	)
 
-	return &RouteTarget{
-		ProviderID: selected.Provider,
-		ModelName:  selected.Name,
-		Weight:     100,
-		Priority:   selected.Priority,
-	}, nil
+	return target, nil
 }
 
 // RoutingRequest contains parameters for model selection
 type RoutingRequest struct {
-	RequestedModel       string
 	TenantID             string
-	Strategy             RoutingStrategy
+	RequestedModel       string
+	Strategy             string
 	RequiredCapabilities []string
 	PromptTokens         int
 	MaxLatencyMs         int64
@@ -183,7 +272,7 @@ func (r *ModelRouter) findCandidates(req *RoutingRequest) []*ModelInfo {
 	if req.RequestedModel != "" {
 		if model, ok := r.models[req.RequestedModel]; ok && model.IsActive {
 			// Check capabilities
-			if r.hasCapabilities(model, req.RequiredCapabilities) {
+			if hasCapabilities(model, req.RequiredCapabilities) {
 				candidates = append(candidates, model)
 			}
 		}
@@ -197,7 +286,7 @@ func (r *ModelRouter) findCandidates(req *RoutingRequest) []*ModelInfo {
 		if model.Name == req.RequestedModel {
 			continue
 		}
-		if r.hasCapabilities(model, req.RequiredCapabilities) {
+		if hasCapabilities(model, req.RequiredCapabilities) {
 			// Check latency constraint
 			if req.MaxLatencyMs > 0 && model.AvgLatencyMs > req.MaxLatencyMs {
 				continue
@@ -210,7 +299,7 @@ func (r *ModelRouter) findCandidates(req *RoutingRequest) []*ModelInfo {
 }
 
 // hasCapabilities checks if a model supports required capabilities
-func (r *ModelRouter) hasCapabilities(model *ModelInfo, required []string) bool {
+func hasCapabilities(model *ModelInfo, required []string) bool {
 	if len(required) == 0 {
 		return true
 	}
@@ -241,9 +330,9 @@ func (r *ModelRouter) selectBest(candidates []*ModelInfo, strategy RoutingStrate
 	switch strategy {
 	case StrategyCostOptimized:
 		return r.selectByCost(candidates)
-	case StrategyLatencyOptimized:
+	case StrategyLatencyOpt:
 		return r.selectByLatency(candidates)
-	case StrategyCapabilityOptimized:
+	case StrategyQualityFirst:
 		return r.selectByCapability(candidates)
 	default:
 		return r.selectByCost(candidates)
@@ -253,7 +342,7 @@ func (r *ModelRouter) selectBest(candidates []*ModelInfo, strategy RoutingStrate
 // selectByCost picks the cheapest model
 func (r *ModelRouter) selectByCost(candidates []*ModelInfo) *ModelInfo {
 	best := candidates[0]
-	minCost := best.CostPer1KInput
+	minCost := best.CostPer1KInput + best.CostPer1KOutput
 	for _, c := range candidates[1:] {
 		cost := c.CostPer1KInput + c.CostPer1KOutput
 		if cost < minCost {
@@ -358,13 +447,5 @@ func (r *ModelRouter) DeactivateModel(modelName string) {
 	}
 }
 
-// ErrNoModelAvailable is returned when no suitable model is found
-var ErrNoModelAvailable = &RoutingError{Message: "no suitable model available for the requested parameters"}
-
-type RoutingError struct {
-	Message string
-}
-
-func (e *RoutingError) Error() string {
-	return e.Message
-}
+// ErrNoModelsAvailable is returned when no suitable model is found
+var ErrNoModelsAvailable = errors.New("no suitable model available for the requested parameters")

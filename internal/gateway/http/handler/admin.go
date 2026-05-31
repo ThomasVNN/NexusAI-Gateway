@@ -34,10 +34,11 @@ func NewAdminHandler(kr repository.KeyRepository, ur repository.UsageRepository,
 }
 
 type CreateKeyRequest struct {
-	Name        string `json:"name"`
-	SourceApp   string `json:"source_app"`
-	DailyQuota  int    `json:"daily_quota"`
-	HourlyQuota int    `json:"hourly_quota"`
+	Name        string   `json:"name"`
+	SourceApp   string   `json:"source_app"`
+	DailyQuota  int      `json:"daily_quota"`
+	HourlyQuota int      `json:"hourly_quota"`
+	Scopes      []string `json:"scopes"`
 }
 
 type CreateKeyResponse struct {
@@ -47,6 +48,7 @@ type CreateKeyResponse struct {
 	SourceApp   string    `json:"source_app"`
 	DailyQuota  int       `json:"daily_quota"`
 	HourlyQuota int       `json:"hourly_quota"`
+	Scopes      []string  `json:"scopes"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

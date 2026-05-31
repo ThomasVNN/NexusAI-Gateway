@@ -402,7 +402,7 @@ func (b *localEventBus) GetSubscriptions(ctx context.Context, clientID string) (
 
 	var subs []*Subscription
 	for _, sub := range b.subs {
-		if sub.ClientID == clientID {
+		if sub.ClientID == clientID && sub.Active {
 			subs = append(subs, sub)
 		}
 	}

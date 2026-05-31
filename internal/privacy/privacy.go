@@ -413,6 +413,11 @@ func (r *AuditRecorder) Record(entry *RedactionAuditEntry) {
 		return
 	}
 
+	// Ensure timestamp is set
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now().UTC()
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

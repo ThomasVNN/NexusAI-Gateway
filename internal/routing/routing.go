@@ -6,10 +6,9 @@ import (
 
 // RouteTarget holds information about which provider and model to dispatch a request to
 type RouteTarget struct {
-	ProviderID string
-	ModelName  string
-	Weight     int
-	Priority   int
+	ModelID    string          `json:"model_id"`
+	ProviderID string          `json:"provider_id"`
+	Strategy   RoutingStrategy `json:"strategy"`
 }
 
 // RouteResolver defines the interface for model routing
@@ -24,16 +23,13 @@ type FailoverRouter struct {
 }
 
 func NewFailoverRouter() *FailoverRouter {
-	// Seed standard models with fallback options
 	return &FailoverRouter{
 		targets: map[string][]RouteTarget{
 			"gpt-4": {
-				{ProviderID: "openai", ModelName: "gpt-4o", Weight: 100, Priority: 1},
-				{ProviderID: "azure-openai", ModelName: "gpt-4-turbo", Weight: 0, Priority: 2},
+				{ModelID: "gpt-4o", ProviderID: "openai", Strategy: StrategyPriority},
 			},
 			"claude-3-opus": {
-				{ProviderID: "anthropic", ModelName: "claude-3-5-sonnet", Weight: 100, Priority: 1},
-				{ProviderID: "aws-bedrock", ModelName: "anthropic.claude-v3", Weight: 0, Priority: 2},
+				{ModelID: "claude-3-5-sonnet", ProviderID: "anthropic", Strategy: StrategyPriority},
 			},
 		},
 	}
@@ -42,16 +38,13 @@ func NewFailoverRouter() *FailoverRouter {
 func (r *FailoverRouter) Route(ctx context.Context, requestedModel string, tenantID string) (*RouteTarget, error) {
 	targets, ok := r.targets[requestedModel]
 	if !ok || len(targets) == 0 {
-		// Default generic route
 		return &RouteTarget{
+			ModelID:    "gpt-4o-mini",
 			ProviderID: "openai",
-			ModelName:  "gpt-4o-mini",
-			Weight:     100,
-			Priority:   1,
+			Strategy:   StrategyPriority,
 		}, nil
 	}
 
-	// Always select highest priority (primary) target first
 	return &targets[0], nil
 }
 

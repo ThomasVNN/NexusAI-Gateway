@@ -2,6 +2,8 @@ package memory
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -48,6 +50,39 @@ func (s *Store) seedDefaultData() {
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
+}
+
+// SeedTestKeys seeds well-known test keys for sandbox mode testing
+func (s *Store) SeedTestKeys() {
+	testKeys := []struct {
+		id     string
+		name   string
+		source string
+		quota  int
+	}{
+		{"test-key-1", "Sandbox Test Key 1", "sandbox", 1000},
+		{"test-key-2", "Sandbox Test Key 2", "sandbox", 1000},
+	}
+
+	for _, tk := range testKeys {
+		keyHash := hashKeyForTest(tk.id)
+		s.keys[keyHash] = &model.RegisteredKey{
+			ID:          tk.id,
+			KeyHash:     keyHash,
+			Name:        tk.name,
+			SourceApp:   tk.source,
+			DailyQuota:  tk.quota,
+			HourlyQuota: tk.quota / 24,
+			Active:      true,
+		}
+	}
+}
+
+// hashKeyForTest computes the same hash as auth.HashKey for test keys
+func hashKeyForTest(key string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(key))
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 // Registered Keys Repository
