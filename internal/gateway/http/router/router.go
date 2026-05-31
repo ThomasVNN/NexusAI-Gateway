@@ -3,17 +3,20 @@ package router
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/auth"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/config"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/eventbus"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
-	"github.com/ThomasVNN/NexusAI-Gateway/internal/quota"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/ratelimit"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
 	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
@@ -47,9 +50,6 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	} else {
 		tenantResolver = tenancy.NewDefaultTenantResolver()
 	}
-
-	// 4. Initialize rate limiter and quota manager
-	rateLimiter := quota.NewTenantRateLimiter()
 
 	// 5. Construct PipelineExecutor and Handler registrations
 	var chatHandler *handler.ChatHandler
@@ -86,6 +86,13 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	modelHandler := handler.NewModelHandler(db)
 	mcpHandler := mcp.NewHandler(piiEngine)
 
+	// Initialize Event Bus
+	eventBus, err := eventbus.NewBus(context.Background(), eventbus.DefaultBusConfig())
+	if err != nil {
+		slog.Warn("Failed to initialize event bus, using nil bus", slog.Any("error", err))
+	}
+	eventHandler := handler.NewEventHandler(eventBus)
+
 	// Admin and system diagnostics mapping
 	var adminHandler *handler.AdminHandler
 	if isDbHealthy {
@@ -93,6 +100,20 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	} else {
 		adminHandler = handler.NewAdminHandler(nil, nil, memStore, false, cfg.InitialPassword)
 	}
+
+	// 4. Initialize rate limiting
+	rateLimitConfig := ratelimit.DefaultRateLimitConfig()
+	rateLimitConfig.RedisURL = cfg.RedisURL
+
+	quotaStorage, err := ratelimit.CreateRedisStorage(cfg.RedisURL)
+	if err != nil {
+		slog.Warn("Failed to initialize Redis rate limiting storage, using in-memory fallback", slog.Any("error", err))
+		quotaStorage = ratelimit.NewInMemoryStorage()
+	}
+
+	quotaManager := ratelimit.NewQuotaManager(quotaStorage, rateLimitConfig)
+	rateLimitMiddleware := ratelimit.NewRateLimitMiddleware(quotaManager, tenantResolver, rateLimitConfig)
+	rateLimitHandler := handler.NewGetRateLimitsHandler(quotaManager)
 
 	// OpenAI endpoints
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
@@ -116,6 +137,24 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Auth and login compatibility
 	mux.HandleFunc("/api/auth/login", adminHandler.HandleLogin)
 	mux.HandleFunc("/api/settings/require-login", adminHandler.HandleRequireLogin)
+
+	// Rate Limiting API Endpoints
+	mux.HandleFunc("/v1/rate-limits/status", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/tiers", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/usage", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/reset", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/quota", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/health", rateLimitHandler.ServeHTTP)
+
+	// Event Bus API Endpoints
+	mux.HandleFunc("POST /v1/events", eventHandler.Publish)
+	mux.HandleFunc("POST /v1/events/subscribe", eventHandler.Subscribe)
+	mux.HandleFunc("DELETE /v1/events/subscribe/", eventHandler.Unsubscribe)
+	mux.HandleFunc("GET /v1/events/subscriptions", eventHandler.GetSubscriptions)
+	mux.HandleFunc("GET /v1/events/dlq", eventHandler.GetDLQEntries)
+	mux.HandleFunc("POST /v1/events/dlq/", eventHandler.RetryDLQEntry)
+	mux.HandleFunc("DELETE /v1/events/dlq/", eventHandler.PurgeDLQEntry)
+	mux.HandleFunc("GET /v1/events/health", eventHandler.HealthCheck)
 
 	// Diagnostics & Observability endpoints
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +220,9 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		fmt.Fprintf(w, "# HELP nexusai_gateway_uptime_seconds Uptime of the gateway in seconds.\n")
 		fmt.Fprintf(w, "# TYPE nexusai_gateway_uptime_seconds gauge\n")
 		fmt.Fprintf(w, "nexusai_gateway_uptime_seconds %.0f\n", time.Since(startTime).Seconds())
+
+		// Export Prometheus metrics using the observability handler
+		observability.PrometheusHandler().ServeHTTP(w, r)
 	})
 
 	// Single Page Application static server
@@ -199,12 +241,10 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 
 	// Wrap routing stack in our production-grade middleware layers
 	return WithRecovery(
-		WithSecurityHeaders(
-			WithCORS(cfg.CORSAllowedOrigins)(
-				WithCorrelationID(
-					WithStructuredLogging(
-						WithRateLimiting(tenantHandler),
-					),
+		WithTracing(
+			WithCorrelationID(
+				WithStructuredLogging(
+					WithRateLimiting(tenantHandler),
 				),
 			),
 		),
