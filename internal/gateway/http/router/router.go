@@ -10,11 +10,9 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/auth"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/config"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
-	"github.com/ThomasVNN/NexusAI-Gateway/internal/eventbus"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
-	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/ratelimit"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
@@ -43,17 +41,10 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	memStore := memory.NewStore()
 	piiEngine := privacy.NewEngine()
 
-	// 3. Initialize tenant components
-	var tenantResolver tenancy.TenantResolver
-	if isDbHealthy {
-		tenantResolver = tenancy.NewPostgresTenantResolver(db)
-	} else {
-		tenantResolver = tenancy.NewDefaultTenantResolver()
-	}
-
-	// 5. Construct PipelineExecutor and Handler registrations
+	// 3. Construct PipelineExecutor and Handler registrations
 	var chatHandler *handler.ChatHandler
 
+	tenantResolver := tenancy.NewDefaultTenantResolver()
 	knowledgeClient := integration.NewDefaultKnowledgeClient()
 	skillsClient := integration.NewDefaultSkillsClient()
 	modelPlatform := integration.NewDefaultModelPlatformClient()
@@ -85,13 +76,6 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 
 	modelHandler := handler.NewModelHandler(db)
 	mcpHandler := mcp.NewHandler(piiEngine)
-
-	// Initialize Event Bus
-	eventBus, err := eventbus.NewBus(context.Background(), eventbus.DefaultBusConfig())
-	if err != nil {
-		slog.Warn("Failed to initialize event bus, using nil bus", slog.Any("error", err))
-	}
-	eventHandler := handler.NewEventHandler(eventBus)
 
 	// Admin and system diagnostics mapping
 	var adminHandler *handler.AdminHandler
@@ -145,16 +129,6 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux.HandleFunc("/v1/rate-limits/reset", rateLimitHandler.ServeHTTP)
 	mux.HandleFunc("/v1/rate-limits/quota", rateLimitHandler.ServeHTTP)
 	mux.HandleFunc("/v1/rate-limits/health", rateLimitHandler.ServeHTTP)
-
-	// Event Bus API Endpoints
-	mux.HandleFunc("POST /v1/events", eventHandler.Publish)
-	mux.HandleFunc("POST /v1/events/subscribe", eventHandler.Subscribe)
-	mux.HandleFunc("DELETE /v1/events/subscribe/", eventHandler.Unsubscribe)
-	mux.HandleFunc("GET /v1/events/subscriptions", eventHandler.GetSubscriptions)
-	mux.HandleFunc("GET /v1/events/dlq", eventHandler.GetDLQEntries)
-	mux.HandleFunc("POST /v1/events/dlq/", eventHandler.RetryDLQEntry)
-	mux.HandleFunc("DELETE /v1/events/dlq/", eventHandler.PurgeDLQEntry)
-	mux.HandleFunc("GET /v1/events/health", eventHandler.HealthCheck)
 
 	// Diagnostics & Observability endpoints
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -220,31 +194,17 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		fmt.Fprintf(w, "# HELP nexusai_gateway_uptime_seconds Uptime of the gateway in seconds.\n")
 		fmt.Fprintf(w, "# TYPE nexusai_gateway_uptime_seconds gauge\n")
 		fmt.Fprintf(w, "nexusai_gateway_uptime_seconds %.0f\n", time.Since(startTime).Seconds())
-
-		// Export Prometheus metrics using the observability handler
-		observability.PrometheusHandler().ServeHTTP(w, r)
 	})
 
 	// Single Page Application static server
 	RegisterStaticRoutes(mux)
 
-	// Create authenticator for tenant middleware
-	var authenticator auth.Authenticator
-	if isDbHealthy {
-		authenticator = auth.NewAPIKeyAuthenticator(keyRepo)
-	} else {
-		authenticator = auth.NewAPIKeyAuthenticator(memStore)
-	}
-
-	// Create tenant-aware handler chain
-	tenantHandler := WithTenantResolution(tenantResolver, authenticator)(mux)
-
 	// Wrap routing stack in our production-grade middleware layers
 	return WithRecovery(
-		WithTracing(
-			WithCorrelationID(
-				WithStructuredLogging(
-					WithRateLimiting(tenantHandler),
+		WithCorrelationID(
+			WithStructuredLogging(
+				WithRateLimiting(
+					rateLimitMiddleware.Middleware(mux),
 				),
 			),
 		),
