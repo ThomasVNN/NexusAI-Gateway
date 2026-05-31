@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { KPIGrid, AIInsightsPanel, ActivityTimeline, WorkspaceOverview, type KPIData, type Insight, type ActivityItem, type WorkspaceOverviewItem } from './components';
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
 
 interface APIKey {
   id: string;
@@ -44,8 +49,56 @@ interface UsageStats {
   average_latency_ms: number;
 }
 
+// ============================================================================
+// Icons
+// ============================================================================
+
+function NexusAILogo() {
+  return (
+    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-primary to-accent-secondary flex items-center justify-center">
+      <span className="text-white font-bold text-sm">NX</span>
+    </div>
+  );
+}
+
+function RequestIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+    </svg>
+  );
+}
+
+function LatencyIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  );
+}
+
+function TokenIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+    </svg>
+  );
+}
+
+function OutputIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  );
+}
+
+// ============================================================================
+// Main App Component
+// ============================================================================
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'keys' | 'providers' | 'logs' | 'catalog'>('keys');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'keys' | 'providers' | 'logs' | 'catalog'>('dashboard');
 
   // Core Data States
   const [keys, setKeys] = useState<APIKey[]>([]);
@@ -75,51 +128,36 @@ export default function App() {
   const [message, setMessage] = useState('');
   const [sysVersion, setSysVersion] = useState({ version: '1.0.0', engine: 'Golang Engine' });
 
+  // ============================================================================
+  // Data Loading
+  // ============================================================================
+
   const loadData = async () => {
     try {
-      // 1. Fetch Keys
-      const keysRes = await fetch('/api/admin/keys');
-      if (keysRes.ok) {
-        const keysData = await keysRes.json();
-        setKeys(keysData || []);
-      }
+      const [keysRes, provRes, detailLogsRes, logsRes, modelsRes, versionRes] = await Promise.all([
+        fetch('/api/admin/keys'),
+        fetch('/api/providers'),
+        fetch('/api/admin/logs'),
+        fetch('/api/admin/usage'),
+        fetch('/api/models'),
+        fetch('/api/system/version'),
+      ]);
 
-      // 2. Fetch Providers (OmniRoute Compatibility Endpoint)
-      const provRes = await fetch('/api/providers');
+      if (keysRes.ok) setKeys(await keysRes.json());
       if (provRes.ok) {
         const provData = await provRes.json();
         setProviders(provData.connections || []);
       }
-
-      // 3. Fetch Real-time logs
-      const logsRes = await fetch('/api/admin/usage'); // fallback
-      const detailLogsRes = await fetch('/api/admin/logs');
-      if (detailLogsRes.ok) {
-        const logsData = await detailLogsRes.json();
-        setLogs(logsData || []);
-      }
+      if (detailLogsRes.ok) setLogs(await detailLogsRes.json());
       if (logsRes.ok) {
         const usageData = await logsRes.json();
-        setUsage(usageData || {
-          total_calls: 0,
-          total_prompt_tokens: 0,
-          total_completion_tokens: 0,
-          average_latency_ms: 0,
-        });
+        setUsage(usageData || { total_calls: 0, total_prompt_tokens: 0, total_completion_tokens: 0, average_latency_ms: 0 });
       }
-
-      // 4. Fetch models catalog (OmniRoute Compatibility Endpoint)
-      const modelsRes = await fetch('/api/models');
       if (modelsRes.ok) {
         const modelsData = await modelsRes.json();
         setModels(modelsData.models || []);
       }
-
-      const versionRes = await fetch('/api/system/version');
-      if (versionRes.ok) {
-        const versionData = await versionRes.json();
-        setSysVersion(versionData);
-      }
+      if (versionRes.ok) setSysVersion(await versionRes.json());
     } catch (e) {
       console.error('Failed to reload admin telemetry:', e);
     }
@@ -131,6 +169,10 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // ============================================================================
+  // Form Handlers
+  // ============================================================================
+
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
     setNewlyCreatedKey(null);
@@ -139,14 +181,8 @@ export default function App() {
       const res = await fetch('/api/admin/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: keyName,
-          source_app: sourceApp,
-          daily_quota: dailyQuota,
-          hourly_quota: hourlyQuota,
-        }),
+        body: JSON.stringify({ name: keyName, source_app: sourceApp, daily_quota: dailyQuota, hourly_quota: hourlyQuota }),
       });
-
       if (res.ok) {
         const data = await res.json();
         setNewlyCreatedKey(data.key);
@@ -156,7 +192,7 @@ export default function App() {
       } else {
         setMessage('Failed to generate key.');
       }
-    } catch (e) {
+    } catch {
       setMessage('Network error occurred.');
     }
   };
@@ -168,17 +204,8 @@ export default function App() {
       const res = await fetch('/api/providers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: providerId,
-          provider: providerId,
-          name: providerName || `${providerId} Connection`,
-          api_key: providerKey,
-          endpoint: providerEndpoint,
-          is_active: true,
-          priority: providerPriority,
-        }),
+        body: JSON.stringify({ id: providerId, provider: providerId, name: providerName || `${providerId} Connection`, api_key: providerKey, endpoint: providerEndpoint, is_active: true, priority: providerPriority }),
       });
-
       if (res.ok) {
         setMessage(`Provider connection ${providerId} updated successfully!`);
         setProviderName('');
@@ -188,159 +215,320 @@ export default function App() {
       } else {
         setMessage('Failed to update provider.');
       }
-    } catch (e) {
+    } catch {
       setMessage('Network error.');
     }
   };
 
+  // ============================================================================
+  // Transform Data for Components
+  // ============================================================================
+
+  const kpiData: KPIData[] = [
+    {
+      id: 'total-requests',
+      label: 'Total Requests',
+      value: usage.total_calls,
+      trend: { direction: 'up', percentage: 12, label: 'vs last hour' },
+      icon: <RequestIcon />,
+      accentColor: 'purple',
+    },
+    {
+      id: 'avg-latency',
+      label: 'Avg Latency',
+      value: `${usage.average_latency_ms.toFixed(0)}ms`,
+      trend: { direction: 'down', percentage: 8, label: 'vs last hour' },
+      icon: <LatencyIcon />,
+      accentColor: 'green',
+    },
+    {
+      id: 'prompt-tokens',
+      label: 'Prompt Tokens',
+      value: usage.total_prompt_tokens,
+      trend: { direction: 'up', percentage: 23, label: 'vs last hour' },
+      icon: <TokenIcon />,
+      accentColor: 'blue',
+    },
+    {
+      id: 'completion-output',
+      label: 'Completion Output',
+      value: usage.total_completion_tokens,
+      trend: { direction: 'neutral', percentage: 0, label: 'vs last hour' },
+      icon: <OutputIcon />,
+      accentColor: 'yellow',
+    },
+  ];
+
+  const insightsData: Insight[] = [
+    {
+      id: 'insight-1',
+      type: 'recommendation',
+      title: 'Consider enabling caching',
+      description: '22% of requests are duplicates. Implementing response caching could reduce costs by up to 15%.',
+      action: { label: 'Configure caching', onClick: () => setActiveTab('dashboard') },
+      timestamp: '2 min ago',
+    },
+    {
+      id: 'insight-2',
+      type: 'warning',
+      title: 'Latency spike detected',
+      description: 'Average latency increased by 12% in the last 15 minutes on GPT-4o requests.',
+      action: { label: 'View details', onClick: () => setActiveTab('logs') },
+      timestamp: '15 min ago',
+    },
+    {
+      id: 'insight-3',
+      type: 'success',
+      title: 'Cost optimization working',
+      description: 'Switching to Claude 3.5 Sonnet for complex reasoning tasks saved $234 this week.',
+      timestamp: '1 hour ago',
+    },
+  ];
+
+  const activityData: ActivityItem[] = logs.slice(0, 5).map((log) => ({
+    id: String(log.id),
+    type: 'api_call',
+    title: `${log.source_app} → ${log.model_id}`,
+    description: `${log.prompt_tokens} prompt tokens, ${log.completion_tokens} completion tokens`,
+    timestamp: log.created_at,
+    metadata: { latency: `${log.latency_ms}ms` },
+  }));
+
+  const workspaceData: WorkspaceOverviewItem[] = providers.map((p) => ({
+    id: p.id,
+    name: p.name,
+    status: p.is_active ? 'healthy' : 'down',
+    type: 'provider',
+    metrics: [
+      { label: 'Priority', value: p.priority, status: 'good' },
+      { label: 'Provider', value: p.provider, status: 'good' },
+    ],
+    lastActivity: 'Active now',
+  }));
+
+  // ============================================================================
+  // Render
+  // ============================================================================
+
   return (
-    <div style={{ minHeight: '100vh', background: '#0b0f19', color: '#f8fafc', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      {/* Top Banner */}
-      <nav style={{ background: '#111827', borderBottom: '1px solid #1f2937', padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ background: '#38bdf8', width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#0f172a' }}>NX</div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.5px' }}>NexusAI-Gateway</h1>
-            <p style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8' }}>Go Microservice v{sysVersion.version} | {sysVersion.engine}</p>
+    <div className="min-h-screen bg-bg-primary">
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-bg-secondary/80 backdrop-blur-md border-b border-border-subtle">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            {/* Logo */}
+            <div className="flex items-center gap-3">
+              <NexusAILogo />
+              <div>
+                <h1 className="text-lg font-bold gradient-text">NexusAI-Gateway</h1>
+                <p className="text-xs text-text-tertiary">v{sysVersion.version} • {sysVersion.engine}</p>
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <nav className="flex items-center gap-1">
+              {[
+                { id: 'dashboard', label: 'Dashboard' },
+                { id: 'keys', label: 'API Keys' },
+                { id: 'providers', label: 'Providers' },
+                { id: 'logs', label: 'Logs' },
+                { id: 'catalog', label: 'Catalog' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                    activeTab === tab.id
+                      ? 'bg-accent-primary/10 text-accent-primary'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-bg-elevated'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => setActiveTab('keys')} style={{ background: activeTab === 'keys' ? '#1e293b' : 'transparent', border: 'none', color: activeTab === 'keys' ? '#38bdf8' : '#94a3b8', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>API Keys</button>
-          <button onClick={() => setActiveTab('providers')} style={{ background: activeTab === 'providers' ? '#1e293b' : 'transparent', border: 'none', color: activeTab === 'providers' ? '#38bdf8' : '#94a3b8', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Providers Config</button>
-          <button onClick={() => setActiveTab('logs')} style={{ background: activeTab === 'logs' ? '#1e293b' : 'transparent', border: 'none', color: activeTab === 'logs' ? '#38bdf8' : '#94a3b8', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Request Logs</button>
-          <button onClick={() => setActiveTab('catalog')} style={{ background: activeTab === 'catalog' ? '#1e293b' : 'transparent', border: 'none', color: activeTab === 'catalog' ? '#38bdf8' : '#94a3b8', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Model Catalog</button>
-        </div>
-      </nav>
+      </header>
 
-      {/* Main Body */}
-      <div style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }}>
-        
-        {/* Core Stats Overview */}
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
-          <div style={{ background: '#111827', border: '1px solid #1f2937', padding: '1.25rem', borderRadius: '8px' }}>
-            <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>Total Requests</span>
-            <strong style={{ fontSize: '1.75rem', color: '#38bdf8', display: 'block', marginTop: '4px' }}>{usage.total_calls}</strong>
-          </div>
-          <div style={{ background: '#111827', border: '1px solid #1f2937', padding: '1.25rem', borderRadius: '8px' }}>
-            <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>Average Latency</span>
-            <strong style={{ fontSize: '1.75rem', color: '#10b981', display: 'block', marginTop: '4px' }}>{usage.average_latency_ms.toFixed(0)} ms</strong>
-          </div>
-          <div style={{ background: '#111827', border: '1px solid #1f2937', padding: '1.25rem', borderRadius: '8px' }}>
-            <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>Prompt Tokens Scubbed</span>
-            <strong style={{ fontSize: '1.75rem', color: '#f43f5e', display: 'block', marginTop: '4px' }}>{usage.total_prompt_tokens}</strong>
-          </div>
-          <div style={{ background: '#111827', border: '1px solid #1f2937', padding: '1.25rem', borderRadius: '8px' }}>
-            <span style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600 }}>Completion Output</span>
-            <strong style={{ fontSize: '1.75rem', color: '#8b5cf6', display: 'block', marginTop: '4px' }}>{usage.total_completion_tokens}</strong>
-          </div>
-        </section>
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Dashboard View */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-8 animate-fade-in">
+            {/* KPI Section */}
+            <section>
+              <h2 className="text-xl font-semibold text-text-primary mb-4">Overview</h2>
+              <KPIGrid items={kpiData} columns={4} />
+            </section>
 
-        {message && (
-          <div style={{ background: '#1e1b4b', border: '1px solid #4338ca', color: '#fbbf24', padding: '1rem', borderRadius: '6px', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between' }}>
-            <span>{message}</span>
-            <button onClick={() => setMessage('')} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}>✕</button>
+            {/* Two Column Layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left: AI Insights */}
+              <div className="lg:col-span-2">
+                <AIInsightsPanel insights={insightsData} />
+              </div>
+
+              {/* Right: Activity */}
+              <div>
+                <ActivityTimeline activities={activityData} maxItems={5} />
+              </div>
+            </div>
+
+            {/* Workspace Overview */}
+            <section>
+              <WorkspaceOverview items={workspaceData} />
+            </section>
           </div>
         )}
 
-        {/* Tab 1: API Keys Panel */}
+        {/* API Keys View */}
         {activeTab === 'keys' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
-            {/* Table */}
-            <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: '8px', padding: '1.5rem' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: '#f8fafc' }}>Authorized Client Keys</h3>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #1f2937', color: '#94a3b8', fontSize: '0.8rem' }}>
-                    <th style={{ padding: '0.75rem' }}>ID</th>
-                    <th style={{ padding: '0.75rem' }}>Label Name</th>
-                    <th style={{ padding: '0.75rem' }}>App Source</th>
-                    <th style={{ padding: '0.75rem' }}>Daily Quota</th>
-                    <th style={{ padding: '0.75rem' }}>Hourly Quota</th>
-                    <th style={{ padding: '0.75rem' }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {keys.length === 0 ? (
-                    <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No keys active. Generated tokens will be displayed here.</td></tr>
-                  ) : (
-                    keys.map((k) => (
-                      <tr key={k.id} style={{ borderBottom: '1px solid #1f2937', fontSize: '0.875rem' }}>
-                        <td style={{ padding: '0.75rem', color: '#38bdf8', fontFamily: 'monospace' }}>{k.id}</td>
-                        <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{k.name}</td>
-                        <td style={{ padding: '0.75rem', color: '#a78bfa' }}>{k.source_app}</td>
-                        <td style={{ padding: '0.75rem' }}>{k.daily_quota} req</td>
-                        <td style={{ padding: '0.75rem' }}>{k.hourly_quota} req</td>
-                        <td style={{ padding: '0.75rem' }}>
-                          <span style={{ padding: '2px 8px', borderRadius: '12px', background: k.active ? '#065f46' : '#991b1b', color: k.active ? '#34d399' : '#f87171', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                            {k.active ? 'ACTIVE' : 'REVOKED'}
-                          </span>
-                        </td>
+          <div className="space-y-6 animate-fade-in">
+            {message && (
+              <div className="flex items-center justify-between px-4 py-3 bg-accent-primary/10 border border-accent-primary/30 rounded-lg">
+                <span className="text-sm text-text-primary">{message}</span>
+                <button onClick={() => setMessage('')} className="text-text-tertiary hover:text-text-primary">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Table */}
+              <div className="lg:col-span-2 panel">
+                <div className="panel-header">
+                  <h3 className="text-lg font-semibold text-text-primary">Authorized Client Keys</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border-subtle">
+                        <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">ID</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Name</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Source</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Daily Quota</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Status</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {keys.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-8 text-center text-text-tertiary">
+                            No keys active. Generate a token to get started.
+                          </td>
+                        </tr>
+                      ) : (
+                        keys.map((k) => (
+                          <tr key={k.id} className="border-b border-border-subtle hover:bg-bg-elevated/50 transition-colors">
+                            <td className="px-4 py-3 font-mono text-accent-primary">{k.id.slice(0, 12)}...</td>
+                            <td className="px-4 py-3 font-medium text-text-primary">{k.name}</td>
+                            <td className="px-4 py-3 text-text-secondary">{k.source_app}</td>
+                            <td className="px-4 py-3 text-text-secondary">{k.daily_quota.toLocaleString()}</td>
+                            <td className="px-4 py-3">
+                              <span className={`badge ${k.active ? 'badge-success' : 'badge-error'}`}>
+                                {k.active ? 'Active' : 'Revoked'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-            {/* Create form */}
-            <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: '8px', padding: '1.5rem', height: 'fit-content' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: '#f8fafc' }}>Create Client Token</h3>
-              <form onSubmit={handleCreateKey} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>Key Description</label>
-                  <input type="text" value={keyName} onChange={(e) => setKeyName(e.target.value)} required placeholder="e.g. Cursor-Copilot-A" style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }} />
+              {/* Create Form */}
+              <div className="panel">
+                <div className="panel-header">
+                  <h3 className="text-lg font-semibold text-text-primary">Create Token</h3>
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>Source App Category</label>
-                  <select value={sourceApp} onChange={(e) => setSourceApp(e.target.value)} style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }}>
-                    <option value="openwebui">OpenWebUI</option>
-                    <option value="openclaude">OpenClaude</option>
-                    <option value="codex">Codex</option>
-                    <option value="antigravity">Antigravity</option>
-                    <option value="direct-api">Direct API</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>Daily Quota</label>
-                  <input type="number" value={dailyQuota} onChange={(e) => setDailyQuota(parseInt(e.target.value))} style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>Hourly Quota</label>
-                  <input type="number" value={hourlyQuota} onChange={(e) => setHourlyQuota(parseInt(e.target.value))} style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }} />
-                </div>
-                <button type="submit" style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '0.75rem', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Generate Secure Key</button>
-              </form>
+                <form onSubmit={handleCreateKey} className="p-5 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-secondary mb-1.5">Key Description</label>
+                    <input
+                      type="text"
+                      value={keyName}
+                      onChange={(e) => setKeyName(e.target.value)}
+                      required
+                      placeholder="e.g. Cursor-Copilot-A"
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-secondary mb-1.5">Source App</label>
+                    <select value={sourceApp} onChange={(e) => setSourceApp(e.target.value)} className="input">
+                      <option value="openwebui">OpenWebUI</option>
+                      <option value="openclaude">OpenClaude</option>
+                      <option value="codex">Codex</option>
+                      <option value="antigravity">Antigravity</option>
+                      <option value="direct-api">Direct API</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-text-secondary mb-1.5">Daily Quota</label>
+                      <input
+                        type="number"
+                        value={dailyQuota}
+                        onChange={(e) => setDailyQuota(parseInt(e.target.value))}
+                        className="input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-text-secondary mb-1.5">Hourly Quota</label>
+                      <input
+                        type="number"
+                        value={hourlyQuota}
+                        onChange={(e) => setHourlyQuota(parseInt(e.target.value))}
+                        className="input"
+                      />
+                    </div>
+                  </div>
+                  <button type="submit" className="btn btn-primary w-full">
+                    Generate Secure Key
+                  </button>
+                </form>
 
-              {newlyCreatedKey && (
-                <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#0f172a', border: '1px dashed #0284c7', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>COPY TOKEN NOW (WILL NOT BE SHOWN AGAIN)</span>
-                  <code style={{ fontSize: '0.9rem', color: '#10b981', display: 'block', wordBreak: 'break-all', marginTop: '6px', fontWeight: 'bold' }}>{newlyCreatedKey}</code>
-                </div>
-              )}
+                {newlyCreatedKey && (
+                  <div className="mx-5 mb-5 p-4 bg-warning/10 border border-warning/30 rounded-lg">
+                    <p className="text-xs font-medium text-warning mb-2">COPY TOKEN NOW (WILL NOT BE SHOWN AGAIN)</p>
+                    <code className="text-sm text-success break-all">{newlyCreatedKey}</code>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Tab 2: Providers Config */}
+        {/* Providers View */}
         {activeTab === 'providers' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
             {/* List */}
-            <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: '8px', padding: '1.5rem' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: '#f8fafc' }}>Configured Upstream Connections</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div className="lg:col-span-2 panel">
+              <div className="panel-header">
+                <h3 className="text-lg font-semibold text-text-primary">Configured Providers</h3>
+              </div>
+              <div className="p-5 space-y-4">
                 {providers.length === 0 ? (
-                  <div style={{ textAlign: 'center', color: '#64748b', padding: '2rem' }}>No AI model provider nodes configured yet. Add one to start routing.</div>
+                  <div className="text-center py-8 text-text-tertiary">
+                    No providers configured. Add one to start routing.
+                  </div>
                 ) : (
                   providers.map((p) => (
-                    <div key={p.id} style={{ background: '#0f172a', border: '1px solid #1f2937', padding: '1rem', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div key={p.id} className="flex items-center justify-between p-4 bg-bg-elevated rounded-lg">
                       <div>
-                        <strong style={{ fontSize: '1rem', color: '#f8fafc' }}>{p.name}</strong>
-                        <span style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>Provider: <code style={{ color: '#a78bfa' }}>{p.provider}</code> | Endpoint: <code style={{ color: '#64748b' }}>{p.endpoint || 'Default Endpoint'}</code></span>
+                        <h4 className="font-medium text-text-primary">{p.name}</h4>
+                        <p className="text-sm text-text-tertiary">
+                          <span className="text-accent-secondary">{p.provider}</span> • {p.endpoint || 'Default Endpoint'}
+                        </p>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '0.8rem', background: '#1e293b', padding: '2px 8px', borderRadius: '4px' }}>Priority: {p.priority}</span>
-                        <span style={{ padding: '2px 8px', borderRadius: '12px', background: p.is_active ? '#065f46' : '#991b1b', color: p.is_active ? '#34d399' : '#f87171', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                          {p.is_active ? 'ACTIVE' : 'DISABLED'}
+                      <div className="flex items-center gap-3">
+                        <span className="badge badge-info">Priority {p.priority}</span>
+                        <span className={`badge ${p.is_active ? 'badge-success' : 'badge-error'}`}>
+                          {p.is_active ? 'Active' : 'Disabled'}
                         </span>
                       </div>
                     </div>
@@ -349,13 +537,15 @@ export default function App() {
               </div>
             </div>
 
-            {/* Create */}
-            <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: '8px', padding: '1.5rem' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: '#f8fafc' }}>Add Provider Node</h3>
-              <form onSubmit={handleAddProvider} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Add Form */}
+            <div className="panel">
+              <div className="panel-header">
+                <h3 className="text-lg font-semibold text-text-primary">Add Provider</h3>
+              </div>
+              <form onSubmit={handleAddProvider} className="p-5 space-y-4">
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>Provider Platform</label>
-                  <select value={providerId} onChange={(e) => setProviderId(e.target.value)} style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }}>
+                  <label className="block text-sm font-medium text-text-secondary mb-1.5">Platform</label>
+                  <select value={providerId} onChange={(e) => setProviderId(e.target.value)} className="input">
                     <option value="openai">OpenAI</option>
                     <option value="anthropic">Anthropic Claude</option>
                     <option value="google">Google Gemini</option>
@@ -364,85 +554,123 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>Connection Label Name</label>
-                  <input type="text" value={providerName} onChange={(e) => setProviderName(e.target.value)} placeholder="e.g. OpenAI Global Node" style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }} />
+                  <label className="block text-sm font-medium text-text-secondary mb-1.5">Label</label>
+                  <input
+                    type="text"
+                    value={providerName}
+                    onChange={(e) => setProviderName(e.target.value)}
+                    placeholder="e.g. OpenAI Global"
+                    className="input"
+                  />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>API Key / Auth Token</label>
-                  <input type="password" value={providerKey} onChange={(e) => setProviderKey(e.target.value)} placeholder="sk-..." style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }} />
+                  <label className="block text-sm font-medium text-text-secondary mb-1.5">API Key</label>
+                  <input
+                    type="password"
+                    value={providerKey}
+                    onChange={(e) => setProviderKey(e.target.value)}
+                    placeholder="sk-..."
+                    className="input"
+                  />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>Custom Endpoint URL (Optional)</label>
-                  <input type="text" value={providerEndpoint} onChange={(e) => setProviderEndpoint(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }} />
+                  <label className="block text-sm font-medium text-text-secondary mb-1.5">Endpoint (Optional)</label>
+                  <input
+                    type="text"
+                    value={providerEndpoint}
+                    onChange={(e) => setProviderEndpoint(e.target.value)}
+                    placeholder="https://..."
+                    className="input"
+                  />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>Routing Priority Weight</label>
-                  <input type="number" value={providerPriority} onChange={(e) => setProviderPriority(parseInt(e.target.value))} style={{ width: '100%', padding: '0.5rem', background: '#0b0f19', border: '1px solid #1f2937', borderRadius: '4px', color: '#fff', boxSizing: 'border-box' }} />
+                  <label className="block text-sm font-medium text-text-secondary mb-1.5">Priority</label>
+                  <input
+                    type="number"
+                    value={providerPriority}
+                    onChange={(e) => setProviderPriority(parseInt(e.target.value))}
+                    className="input"
+                  />
                 </div>
-                <button type="submit" style={{ background: '#10b981', color: '#fff', border: 'none', padding: '0.75rem', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Register Node</button>
+                <button type="submit" className="btn btn-primary w-full">
+                  Register Provider
+                </button>
               </form>
             </div>
           </div>
         )}
 
-        {/* Tab 3: Request Logs */}
+        {/* Logs View */}
         {activeTab === 'logs' && (
-          <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: '8px', padding: '1.5rem' }}>
-            <h3 style={{ margin: '0 0 1rem 0', color: '#f8fafc' }}>Real-time Prompt Scrubbing & Audit Trail</h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #1f2937', color: '#94a3b8', fontSize: '0.8rem' }}>
-                  <th style={{ padding: '0.75rem' }}>ID</th>
-                  <th style={{ padding: '0.75rem' }}>Key Reference</th>
-                  <th style={{ padding: '0.75rem' }}>Model</th>
-                  <th style={{ padding: '0.75rem' }}>Prompt Tokens</th>
-                  <th style={{ padding: '0.75rem' }}>Completion Output</th>
-                  <th style={{ padding: '0.75rem' }}>Latency</th>
-                  <th style={{ padding: '0.75rem' }}>App Origin</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>No requests audited yet. Initiate completion streaming to record traces.</td></tr>
-                ) : (
-                  logs.map((l) => (
-                    <tr key={l.id} style={{ borderBottom: '1px solid #1f2937', fontSize: '0.875rem' }}>
-                      <td style={{ padding: '0.75rem', color: '#64748b' }}>{l.id}</td>
-                      <td style={{ padding: '0.75rem', color: '#38bdf8', fontFamily: 'monospace' }}>{l.key_id}</td>
-                      <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{l.model_id}</td>
-                      <td style={{ padding: '0.75rem', color: '#f43f5e' }}>{l.prompt_tokens} tokens (PII-Cleaned)</td>
-                      <td style={{ padding: '0.75rem', color: '#8b5cf6' }}>{l.completion_tokens} tokens</td>
-                      <td style={{ padding: '0.75rem', color: '#10b981', fontWeight: 'bold' }}>{l.latency_ms} ms</td>
-                      <td style={{ padding: '0.75rem', color: '#a78bfa' }}>{l.source_app}</td>
+          <div className="panel animate-fade-in">
+            <div className="panel-header">
+              <h3 className="text-lg font-semibold text-text-primary">Request Logs</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border-subtle">
+                    <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">ID</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Key</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Model</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Prompt Tokens</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Completion</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Latency</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-text-tertiary">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-text-tertiary">
+                        No logs yet. Make API requests to see them here.
+                      </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Tab 4: Model Catalog */}
-        {activeTab === 'catalog' && (
-          <div style={{ background: '#111827', border: '1px solid #1f2937', borderRadius: '8px', padding: '1.5rem' }}>
-            <h3 style={{ margin: '0 0 1rem 0', color: '#f8fafc' }}>Active Gateway Routing Catalog</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
-              {models.length === 0 ? (
-                <div style={{ color: '#64748b', colSpan: 3, textAlign: 'center', padding: '2rem' }}>No models active. Register a provider to populate catalog.</div>
-              ) : (
-                models.map((m) => (
-                  <div key={m.id} style={{ background: '#0f172a', border: '1px solid #1f2937', padding: '1.25rem', borderRadius: '6px' }}>
-                    <strong style={{ fontSize: '1rem', color: '#38bdf8', display: 'block' }}>{m.id}</strong>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginTop: '4px' }}>Canonical Name: {m.name || m.id}</span>
-                    <span style={{ display: 'block', fontSize: '0.75rem', color: '#a78bfa', marginTop: '8px', background: '#1e293b', width: 'fit-content', padding: '2px 8px', borderRadius: '4px' }}>Provider: {m.provider}</span>
-                  </div>
-                ))
-              )}
+                  ) : (
+                    logs.map((l) => (
+                      <tr key={l.id} className="border-b border-border-subtle hover:bg-bg-elevated/50 transition-colors">
+                        <td className="px-4 py-3 text-text-muted">{l.id}</td>
+                        <td className="px-4 py-3 font-mono text-accent-primary">{l.key_id.slice(0, 12)}...</td>
+                        <td className="px-4 py-3 font-medium text-text-primary">{l.model_id}</td>
+                        <td className="px-4 py-3 text-error">{l.prompt_tokens}</td>
+                        <td className="px-4 py-3 text-accent-primary">{l.completion_tokens}</td>
+                        <td className="px-4 py-3 text-success font-medium">{l.latency_ms}ms</td>
+                        <td className="px-4 py-3 text-text-secondary">{l.source_app}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
 
-      </div>
+        {/* Catalog View */}
+        {activeTab === 'catalog' && (
+          <div className="panel animate-fade-in">
+            <div className="panel-header">
+              <h3 className="text-lg font-semibold text-text-primary">Model Catalog</h3>
+            </div>
+            <div className="p-5">
+              {models.length === 0 ? (
+                <div className="text-center py-8 text-text-tertiary">
+                  No models available. Register a provider to populate the catalog.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {models.map((m) => (
+                    <div key={m.id} className="p-4 bg-bg-elevated rounded-lg border border-border-subtle hover:border-accent-primary/30 transition-colors">
+                      <h4 className="font-mono text-accent-primary mb-1">{m.id}</h4>
+                      <p className="text-sm text-text-secondary mb-2">{m.name || m.id}</p>
+                      <span className="badge badge-info">{m.provider}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

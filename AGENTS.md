@@ -68,5 +68,7 @@ To ensure a standard of excellence, you must strictly follow these engineering r
 
 For full ecosystem governance, architectures, and workflow steps, refer to:
 * Global Constitution: [AGENTS.md](../AGENTS.md)
-* Agent Operating Model: [agents/operating-model.md](../agents/operating-model.md)
+* Agent Handoff: [docs/governance/AGENT_HANDOFF.md](../docs/governance/AGENT_HANDOFF.md)
+* Governance Index: [docs/governance/INDEX.md](../docs/governance/INDEX.md)
 * GitHub Engineering System: [docs/governance/github-engineering-system.md](../docs/governance/github-engineering-system.md)
+* Terminology: [docs/governance/terminology.md](../docs/governance/terminology.md)
