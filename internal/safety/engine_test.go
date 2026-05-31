@@ -92,22 +92,30 @@ func TestSafetyEngine_EvaluateResponse(t *testing.T) {
 }
 
 func TestSafetyEngine_GetMetrics(t *testing.T) {
+	// Note: GlobalMetrics is shared across tests, so we measure deltas
 	engine := NewSafetyEngine(SafetyLevelLow)
+
+	// Get baseline metrics before test
+	baseline := engine.GetMetrics()
+	baselineTotal := baseline["total_evaluations"].(int64)
+	baselinePassed := baseline["passed"].(int64)
+	baselineFailed := baseline["failed"].(int64)
+
 	engine.Evaluate(context.Background(), "Clean text", "prompt")
 	engine.Evaluate(context.Background(), "I hate this", "prompt")
 
 	metrics := engine.GetMetrics()
 
-	if metrics["total_evaluations"].(int64) != 2 {
-		t.Errorf("Expected 2 evaluations, got %d", metrics["total_evaluations"])
+	if metrics["total_evaluations"].(int64) != baselineTotal+2 {
+		t.Errorf("Expected %d evaluations, got %d", baselineTotal+2, metrics["total_evaluations"])
 	}
 
-	if metrics["passed"].(int64) != 1 {
-		t.Errorf("Expected 1 passed, got %d", metrics["passed"])
+	if metrics["passed"].(int64) != baselinePassed+1 {
+		t.Errorf("Expected %d passed, got %d", baselinePassed+1, metrics["passed"])
 	}
 
-	if metrics["failed"].(int64) != 1 {
-		t.Errorf("Expected 1 failed, got %d", metrics["failed"])
+	if metrics["failed"].(int64) != baselineFailed+1 {
+		t.Errorf("Expected %d failed, got %d", baselineFailed+1, metrics["failed"])
 	}
 }
 

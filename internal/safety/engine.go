@@ -98,7 +98,7 @@ func (e *SafetyEngine) initPatterns() {
 	e.patterns[HarmCategorySelfHarm] = regexp.MustCompile(`(?i)(?:suicide|self.?harm|cut.?myself|kill.?myself|end.?my.?life)`)
 
 	// Dangerous content patterns
-	e.patterns[HarmCategoryDangerousContent] = regexp.MustCompile(`(?i)(?:how\s+to|instructions?\s+for|guide\s+to)\s+(?:make\s+(?:bomb|weapon|explosive|poison|drug)|hack\s+(?:computer|account|system)|kill|attack)`)
+	e.patterns[HarmCategoryDangerousContent] = regexp.MustCompile(`(?i)(?:instructions?\s+for|how\s+to|guide\s+to)\s+.*(?:bomb|weapon|explosive|kill|attack|hack|poison|drug)`)
 
 	// PII patterns (enhanced from privacy filter)
 	e.patterns[HarmCategoryPII] = regexp.MustCompile(`(?i)(?:ssn|social\s+security|credit\s+card|password|secret\s+key|api\s+key)\s*[:=]\s*\S+`)
