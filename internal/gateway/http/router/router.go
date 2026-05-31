@@ -98,7 +98,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 
 	quotaManager := ratelimit.NewQuotaManager(quotaStorage, rateLimitConfig)
 	rateLimitMiddleware := ratelimit.NewRateLimitMiddleware(quotaManager, tenantResolver, rateLimitConfig)
-	rateLimitHandler := handler.NewGetRateLimitsHandler(quotaManager)
+	rateLimitHandler := handler.NewGetRateLimitsHandler(handler.ToQuotaManagerInterface(quotaManager))
 
 	// OpenAI endpoints
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)

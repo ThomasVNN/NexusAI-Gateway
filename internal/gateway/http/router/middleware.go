@@ -20,19 +20,19 @@ import (
 
 // Middleware functions that wrap handlers with observability
 var Middleware = struct {
-	Tracing         func(http.Handler) http.Handler
-	CorrelationID   func(http.Handler) http.Handler
-	StructuredLog   func(http.Handler) http.Handler
-	Recovery        func(http.Handler) http.Handler
-	RateLimiting    func(http.Handler) http.Handler
-	Metrics         func(http.Handler) http.Handler
+	Tracing       func(http.Handler) http.Handler
+	CorrelationID func(http.Handler) http.Handler
+	StructuredLog func(http.Handler) http.Handler
+	Recovery      func(http.Handler) http.Handler
+	RateLimiting  func(http.Handler) http.Handler
+	Metrics       func(http.Handler) http.Handler
 }{
-	Tracing:         WithTracing,
-	CorrelationID:   WithCorrelationID,
-	StructuredLog:   WithStructuredLogging,
-	Recovery:        WithRecovery,
-	RateLimiting:    WithRateLimiting,
-	Metrics:         WithTracing, // Tracing includes metrics
+	Tracing:       WithTracing,
+	CorrelationID: WithCorrelationID,
+	StructuredLog: WithStructuredLogging,
+	Recovery:      WithRecovery,
+	RateLimiting:  WithRateLimiting,
+	Metrics:       WithTracing, // Tracing includes metrics
 }
 
 type contextKey string
@@ -292,28 +292,33 @@ func WithRateLimiting(next http.Handler) http.Handler {
 		tenant, err := tenancy.GetTenant(r.Context())
 		if err == nil && tenant.IsActive {
 			// Use tenant-aware rate limiting
-			tenantRateLimiter := quota.NewTenantRateLimiter()
 			plan := tenant.Plan
 			if plan == "" {
 				plan = "standard"
 			}
+			tenantRateLimiter := quota.NewTenantRateLimiter(plan)
 
-			allowed, usage := tenantRateLimiter.Allow(tenant.ID, plan, 0)
+			allowed := tenantRateLimiter.Allow(tenant.ID)
 			if !allowed {
 				corrID := GetCorrelationID(r.Context())
 				slog.WarnContext(r.Context(), "Tenant rate limit exceeded",
 					slog.String("tenant_id", tenant.ID),
 					slog.String("tenant_slug", tenant.Slug),
 					slog.String("plan", plan),
-					slog.String("limit_type", usage.ExceededLimitType),
 					slog.String("correlation_id", corrID),
 				)
-				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", quota.DefaultQuotaPlans[plan].RequestsPerMinute))
-				w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", usage.RemainingMinute))
+				plans := quota.DefaultQuotaPlans()
+				planLimits, _ := plans[plan]
+				var rpm int = 60
+				if planLimits != nil {
+					rpm = planLimits.RequestsPerMin
+				}
+				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", rpm))
+				w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", tenantRateLimiter.GetRemaining(tenant.ID)))
 				w.Header().Set("Retry-After", "60")
 				handler.WriteError(w, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED",
 					fmt.Sprintf("Rate limit exceeded for tenant %s. Limit: %d/min. Retry after 60 seconds.",
-						tenant.Slug, quota.DefaultQuotaPlans[plan].RequestsPerMinute))
+						tenant.Slug, rpm))
 				return
 			}
 		} else {

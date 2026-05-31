@@ -20,20 +20,20 @@ func NewModelConfigRepository(db *postgres.DB) *ModelConfigRepository {
 
 // ModelConfig represents a model configuration stored in the database
 type ModelConfig struct {
-	ID            string
-	Name          string
-	ProviderID    string
-	Endpoint      string
-	APIKeyRef     string
-	CostPer1KInput float64
+	ID              string
+	Name            string
+	ProviderID      string
+	Endpoint        string
+	APIKeyRef       string
+	CostPer1KInput  float64
 	CostPer1KOutput float64
-	MaxTokens     int
-	Capabilities  []string
-	Priority      int
-	IsActive     bool
-	TenantID      string
-	CreatedAt     string
-	UpdatedAt     string
+	MaxTokens       int
+	Capabilities    []string
+	Priority        int
+	IsActive        bool
+	TenantID        string
+	CreatedAt       string
+	UpdatedAt       string
 }
 
 // GetModelsForTenant retrieves all models available for a tenant
@@ -59,7 +59,7 @@ func (r *ModelConfigRepository) GetModelsForTenant(ctx context.Context, tenantID
 	for rows.Next() {
 		cfg := &ModelConfig{}
 		var caps sql.NullString
-		var endpoint, apiKeyRef sql.NullString
+		var endpoint sql.NullString
 		var tenantIDNull sql.NullString
 
 		err := rows.Scan(
@@ -149,12 +149,12 @@ func splitAndTrim(s, sep string) []string {
 
 // TenantRoutingProfile stores routing preferences for a tenant
 type TenantRoutingProfile struct {
-	TenantID       string
+	TenantID        string
 	DefaultStrategy string
 	PreferredModels []string
-	BlockedModels  []string
-	MaxLatencyMs   int
-	MaxCostPerDay  float64
+	BlockedModels   []string
+	MaxLatencyMs    int
+	MaxCostPerDay   float64
 }
 
 // GetTenantProfile retrieves routing preferences for a tenant
@@ -180,12 +180,12 @@ func (r *ModelConfigRepository) GetTenantProfile(ctx context.Context, tenantID s
 		if err == sql.ErrNoRows {
 			// Return default profile
 			return &TenantRoutingProfile{
-				TenantID:       tenantID,
+				TenantID:        tenantID,
 				DefaultStrategy: "cost_optimized",
 				PreferredModels: []string{},
-				BlockedModels:  []string{},
-				MaxLatencyMs:   5000,
-				MaxCostPerDay:  100.0,
+				BlockedModels:   []string{},
+				MaxLatencyMs:    5000,
+				MaxCostPerDay:   100.0,
 			}, nil
 		}
 		return nil, fmt.Errorf("failed to query profile: %w", err)

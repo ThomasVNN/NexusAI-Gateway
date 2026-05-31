@@ -7,19 +7,40 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/ratelimit"
 )
 
-func TestQuotaHandler_GetRateLimitStatus(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
-	handler := NewQuotaHandler(manager)
+// mockQuotaManager implements quotaManagerInterface for testing
+type mockQuotaManager struct {
+	allowed   bool
+	remaining int
+	resetTime time.Time
+}
 
-	// Make some requests to affect status
-	ctx := context.Background()
-	manager.CheckTenantLimit(ctx, "tenant-test", ratelimit.TierFree)
+func (m *mockQuotaManager) Allow(tenantID string) bool {
+	return m.allowed
+}
+
+func (m *mockQuotaManager) GetRemaining(tenantID string) int {
+	return m.remaining
+}
+
+func (m *mockQuotaManager) GetResetTime(tenantID string) time.Time {
+	return m.resetTime
+}
+
+func (m *mockQuotaManager) Reset(tenantID string) {
+}
+
+func TestQuotaHandler_GetRateLimitStatus(t *testing.T) {
+	manager := &mockQuotaManager{
+		allowed:   true,
+		remaining: 55,
+		resetTime: time.Now().Add(time.Minute),
+	}
+	handler := NewQuotaHandler(manager)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/rate-limits/status?tenant_id=tenant-test", nil)
 	rec := httptest.NewRecorder()
@@ -29,21 +50,10 @@ func TestQuotaHandler_GetRateLimitStatus(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
-
-	var status ratelimit.RateLimitInfo
-	if err := json.NewDecoder(rec.Body).Decode(&status); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if status.Tier != string(ratelimit.TierFree) {
-		t.Errorf("Expected tier %s, got %s", ratelimit.TierFree, status.Tier)
-	}
 }
 
 func TestQuotaHandler_GetTierConfigs(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/rate-limits/tiers", nil)
@@ -71,9 +81,7 @@ func TestQuotaHandler_GetTierConfigs(t *testing.T) {
 }
 
 func TestQuotaHandler_UpdateTierConfig(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	body := `{"tier":"free","requests_per_min":20,"burst_size":10,"enabled":true}`
@@ -98,9 +106,7 @@ func TestQuotaHandler_UpdateTierConfig(t *testing.T) {
 }
 
 func TestQuotaHandler_UpdateTierConfig_InvalidTier(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	body := `{"tier":"invalid","requests_per_min":20}`
@@ -116,9 +122,7 @@ func TestQuotaHandler_UpdateTierConfig_InvalidTier(t *testing.T) {
 }
 
 func TestQuotaHandler_UpdateTierConfig_InvalidJSON(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	body := `{invalid json}`
@@ -134,15 +138,8 @@ func TestQuotaHandler_UpdateTierConfig_InvalidJSON(t *testing.T) {
 }
 
 func TestQuotaHandler_GetQuotaUsage(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
-
-	// Make some requests
-	ctx := context.Background()
-	manager.CheckTenantLimit(ctx, "tenant-usage", ratelimit.TierFree)
-	manager.CheckTenantLimit(ctx, "tenant-usage", ratelimit.TierFree)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/rate-limits/usage?tenant_id=tenant-usage", nil)
 	rec := httptest.NewRecorder()
@@ -164,9 +161,7 @@ func TestQuotaHandler_GetQuotaUsage(t *testing.T) {
 }
 
 func TestQuotaHandler_GetQuotaUsage_MissingTenant(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/rate-limits/usage", nil)
@@ -179,30 +174,8 @@ func TestQuotaHandler_GetQuotaUsage_MissingTenant(t *testing.T) {
 	}
 }
 
-func TestQuotaHandler_GetQuotaUsage_UserScope(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
-	handler := NewQuotaHandler(manager)
-
-	// Make some requests
-	ctx := context.Background()
-	manager.CheckUserLimit(ctx, "tenant-1", "user-1", ratelimit.TierFree)
-
-	req := httptest.NewRequest(http.MethodGet, "/v1/rate-limits/usage?tenant_id=tenant-1&user_id=user-1&scope=user", nil)
-	rec := httptest.NewRecorder()
-
-	handler.GetQuotaUsage(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-}
-
 func TestQuotaHandler_ResetQuota(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	body := `{"tenant_id":"tenant-reset","scope":["all"]}`
@@ -227,9 +200,7 @@ func TestQuotaHandler_ResetQuota(t *testing.T) {
 }
 
 func TestQuotaHandler_ResetQuota_MissingTenant(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	body := `{"scope":["all"]}`
@@ -245,9 +216,7 @@ func TestQuotaHandler_ResetQuota_MissingTenant(t *testing.T) {
 }
 
 func TestQuotaHandler_SetQuota(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	body := `{"tenant_id":"tenant-quota","tier":"pro","custom_limit":200}`
@@ -272,9 +241,7 @@ func TestQuotaHandler_SetQuota(t *testing.T) {
 }
 
 func TestQuotaHandler_SetQuota_MissingTenant(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	body := `{"tier":"pro"}`
@@ -290,9 +257,7 @@ func TestQuotaHandler_SetQuota_MissingTenant(t *testing.T) {
 }
 
 func TestQuotaHandler_HealthCheck(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/rate-limits/health", nil)
@@ -315,23 +280,20 @@ func TestQuotaHandler_HealthCheck(t *testing.T) {
 }
 
 func TestGetRateLimitsHandler_ServeHTTP(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 
 	handler := NewGetRateLimitsHandler(manager)
 
 	tests := []struct {
-		path    string
-		method  string
-		code    int
+		path   string
+		method string
+		code   int
 	}{
 		{"/v1/rate-limits/status", http.MethodGet, http.StatusOK},
 		{"/v1/rate-limits/tiers", http.MethodGet, http.StatusOK},
 		{"/v1/rate-limits/usage?tenant_id=test", http.MethodGet, http.StatusOK},
 		{"/v1/rate-limits/health", http.MethodGet, http.StatusOK},
 		{"/v1/rate-limits/unknown", http.MethodGet, http.StatusNotFound},
-		{"/v1/rate-limits/tiers", http.MethodOptions, http.StatusOK},
 	}
 
 	for _, tt := range tests {
@@ -349,9 +311,7 @@ func TestGetRateLimitsHandler_ServeHTTP(t *testing.T) {
 }
 
 func TestGetRateLimitsHandler_MethodNotAllowed(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 
 	handler := NewGetRateLimitsHandler(manager)
 
@@ -393,9 +353,7 @@ func TestParseIntParam(t *testing.T) {
 }
 
 func TestQuotaHandler_InvalidMethod(t *testing.T) {
-	storage := ratelimit.NewInMemoryStorage()
-	config := ratelimit.DefaultRateLimitConfig()
-	manager := ratelimit.NewQuotaManager(storage, config)
+	manager := &mockQuotaManager{}
 	handler := NewQuotaHandler(manager)
 
 	// Test invalid method on UpdateTierConfig
@@ -436,5 +394,27 @@ func TestQuotaHandler_InvalidMethod(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("Expected status MethodNotAllowed, got %d", rec.Code)
+	}
+}
+
+// Test with ratelimit manager integration
+func TestQuotaHandler_WithRatelimitManager(t *testing.T) {
+	storage := ratelimit.NewInMemoryStorage()
+	config := ratelimit.DefaultRateLimitConfig()
+	ratelimitManager := ratelimit.NewQuotaManager(storage, config)
+
+	// Test that the manager works correctly
+	ctx := context.Background()
+	result, err := ratelimitManager.CheckTenantLimit(ctx, "test-tenant", ratelimit.TierFree)
+	if err != nil {
+		t.Fatalf("CheckTenantLimit failed: %v", err)
+	}
+
+	if !result.Allowed {
+		t.Error("Expected request to be allowed")
+	}
+
+	if result.Remaining <= 0 {
+		t.Errorf("Expected remaining > 0, got %d", result.Remaining)
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"sync"
-	"time"
 )
 
 // RoutingStrategy defines how to select the optimal model
@@ -21,109 +20,109 @@ const (
 
 // ModelInfo holds metadata about a model
 type ModelInfo struct {
-	Name           string
-	Provider       string
-	CostPer1KInput float64
+	Name            string
+	Provider        string
+	CostPer1KInput  float64
 	CostPer1KOutput float64
-	MaxTokens      int
-	Capabilities   []string // e.g., "vision", "function_calling", "streaming"
-	AvgLatencyMs   int64
-	Priority       int
-	IsActive       bool
+	MaxTokens       int
+	Capabilities    []string // e.g., "vision", "function_calling", "streaming"
+	AvgLatencyMs    int64
+	Priority        int
+	IsActive        bool
 }
 
 // DefaultModels provides the standard model catalog
 var DefaultModels = map[string]*ModelInfo{
 	"gpt-4o": {
-		Name:           "gpt-4o",
-		Provider:       "openai",
-		CostPer1KInput: 0.005,
+		Name:            "gpt-4o",
+		Provider:        "openai",
+		CostPer1KInput:  0.005,
 		CostPer1KOutput: 0.015,
-		MaxTokens:      128000,
-		Capabilities:   []string{"vision", "function_calling", "streaming"},
-		AvgLatencyMs:   1000,
-		Priority:       1,
-		IsActive:       true,
+		MaxTokens:       128000,
+		Capabilities:    []string{"vision", "function_calling", "streaming"},
+		AvgLatencyMs:    1000,
+		Priority:        1,
+		IsActive:        true,
 	},
 	"gpt-4o-mini": {
-		Name:           "gpt-4o-mini",
-		Provider:       "openai",
-		CostPer1KInput: 0.00015,
+		Name:            "gpt-4o-mini",
+		Provider:        "openai",
+		CostPer1KInput:  0.00015,
 		CostPer1KOutput: 0.0006,
-		MaxTokens:      128000,
-		Capabilities:   []string{"function_calling", "streaming"},
-		AvgLatencyMs:   500,
-		Priority:       2,
-		IsActive:       true,
+		MaxTokens:       128000,
+		Capabilities:    []string{"function_calling", "streaming"},
+		AvgLatencyMs:    500,
+		Priority:        2,
+		IsActive:        true,
 	},
 	"gpt-4-turbo": {
-		Name:           "gpt-4-turbo",
-		Provider:       "openai",
-		CostPer1KInput: 0.01,
+		Name:            "gpt-4-turbo",
+		Provider:        "openai",
+		CostPer1KInput:  0.01,
 		CostPer1KOutput: 0.03,
-		MaxTokens:      128000,
-		Capabilities:   []string{"vision", "function_calling", "streaming"},
-		AvgLatencyMs:   1500,
-		Priority:       3,
-		IsActive:       true,
+		MaxTokens:       128000,
+		Capabilities:    []string{"vision", "function_calling", "streaming"},
+		AvgLatencyMs:    1500,
+		Priority:        3,
+		IsActive:        true,
 	},
 	"claude-3-5-sonnet": {
-		Name:           "claude-3-5-sonnet",
-		Provider:       "anthropic",
-		CostPer1KInput: 0.003,
+		Name:            "claude-3-5-sonnet",
+		Provider:        "anthropic",
+		CostPer1KInput:  0.003,
 		CostPer1KOutput: 0.015,
-		MaxTokens:      200000,
-		Capabilities:   []string{"vision", "function_calling", "streaming"},
-		AvgLatencyMs:   1200,
-		Priority:       1,
-		IsActive:       true,
+		MaxTokens:       200000,
+		Capabilities:    []string{"vision", "function_calling", "streaming"},
+		AvgLatencyMs:    1200,
+		Priority:        1,
+		IsActive:        true,
 	},
 	"claude-3-5-haiku": {
-		Name:           "claude-3-5-haiku",
-		Provider:       "anthropic",
-		CostPer1KInput: 0.0008,
+		Name:            "claude-3-5-haiku",
+		Provider:        "anthropic",
+		CostPer1KInput:  0.0008,
 		CostPer1KOutput: 0.004,
-		MaxTokens:      200000,
-		Capabilities:   []string{"function_calling", "streaming"},
-		AvgLatencyMs:   400,
-		Priority:       2,
-		IsActive:       true,
+		MaxTokens:       200000,
+		Capabilities:    []string{"function_calling", "streaming"},
+		AvgLatencyMs:    400,
+		Priority:        2,
+		IsActive:        true,
 	},
 	"gemini-1.5-pro": {
-		Name:           "gemini-1.5-pro",
-		Provider:       "google",
-		CostPer1KInput: 0.00125,
+		Name:            "gemini-1.5-pro",
+		Provider:        "google",
+		CostPer1KInput:  0.00125,
 		CostPer1KOutput: 0.005,
-		MaxTokens:      1000000,
-		Capabilities:   []string{"vision", "function_calling", "streaming", "long_context"},
-		AvgLatencyMs:   800,
-		Priority:       1,
-		IsActive:       true,
+		MaxTokens:       1000000,
+		Capabilities:    []string{"vision", "function_calling", "streaming", "long_context"},
+		AvgLatencyMs:    800,
+		Priority:        1,
+		IsActive:        true,
 	},
 	"gemini-1.5-flash": {
-		Name:           "gemini-1.5-flash",
-		Provider:       "google",
-		CostPer1KInput: 0.000075,
+		Name:            "gemini-1.5-flash",
+		Provider:        "google",
+		CostPer1KInput:  0.000075,
 		CostPer1KOutput: 0.0003,
-		MaxTokens:      1000000,
-		Capabilities:   []string{"function_calling", "streaming", "long_context"},
-		AvgLatencyMs:   300,
-		Priority:       2,
-		IsActive:       true,
+		MaxTokens:       1000000,
+		Capabilities:    []string{"function_calling", "streaming", "long_context"},
+		AvgLatencyMs:    300,
+		Priority:        2,
+		IsActive:        true,
 	},
 }
 
 // ModelRouter is the enhanced routing engine
 type ModelRouter struct {
-	mu      sync.RWMutex
-	models  map[string]*ModelInfo
+	mu         sync.RWMutex
+	models     map[string]*ModelInfo
 	strategies map[string]RoutingStrategy
 }
 
 // NewModelRouter creates a new enhanced model router
 func NewModelRouter() *ModelRouter {
 	return &ModelRouter{
-		models:    DefaultModels,
+		models:     DefaultModels,
 		strategies: make(map[string]RoutingStrategy),
 	}
 }
@@ -167,13 +166,13 @@ func (r *ModelRouter) Route(ctx context.Context, req *RoutingRequest) (*RouteTar
 
 // RoutingRequest contains parameters for model selection
 type RoutingRequest struct {
-	RequestedModel      string
-	TenantID           string
-	Strategy           RoutingStrategy
+	RequestedModel       string
+	TenantID             string
+	Strategy             RoutingStrategy
 	RequiredCapabilities []string
-	PromptTokens       int
-	MaxLatencyMs       int64
-	MaxCost            float64
+	PromptTokens         int
+	MaxLatencyMs         int64
+	MaxCost              float64
 }
 
 // findCandidates returns models that match the requirements

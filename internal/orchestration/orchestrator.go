@@ -10,14 +10,15 @@ import (
 
 // Orchestrator manages multi-step AI request flows
 type Orchestrator struct {
-	mu          sync.RWMutex
-	chains      map[string]*Chain
-	maxDepth    int
-	timeout     time.Duration
+	mu       sync.RWMutex
+	chains   map[string]*Chain
+	maxDepth int
+	timeout  time.Duration
 }
 
 // Chain represents a sequence of AI calls
 type Chain struct {
+	mu          sync.Mutex
 	ID          string
 	Name        string
 	Steps       []*Step
@@ -30,26 +31,26 @@ type Chain struct {
 
 // Step represents a single step in a chain
 type Step struct {
-	ID          string
-	Name        string
-	InputKeys   []string  // Keys from previous step results to use as input
-	Model       string    // Override model for this step
-	Prompt      string    // Template with {{context.key}} placeholders
-	SkillName   string    // Optional skill to execute
-	DependsOn   []string  // Step IDs this step depends on
-	Timeout     time.Duration
-	Optional    bool      // If true, failure doesn't fail the chain
+	ID        string
+	Name      string
+	InputKeys []string // Keys from previous step results to use as input
+	Model     string   // Override model for this step
+	Prompt    string   // Template with {{context.key}} placeholders
+	SkillName string   // Optional skill to execute
+	DependsOn []string // Step IDs this step depends on
+	Timeout   time.Duration
+	Optional  bool // If true, failure doesn't fail the chain
 }
 
 // StepResult holds the output of a step execution
 type StepResult struct {
-	StepID     string
-	Output     string
-	Error      error
-	Duration   time.Duration
-	ModelUsed  string
-	TokensUsed int
-	StartedAt  time.Time
+	StepID      string
+	Output      string
+	Error       error
+	Duration    time.Duration
+	ModelUsed   string
+	TokensUsed  int
+	StartedAt   time.Time
 	CompletedAt time.Time
 }
 
@@ -99,7 +100,7 @@ func (ec *ExecutionContext) MarkImmutable(key string) {
 type ChainStatus string
 
 const (
-	ChainStatusPending    ChainStatus = "pending"
+	ChainStatusPending   ChainStatus = "pending"
 	ChainStatusRunning   ChainStatus = "running"
 	ChainStatusCompleted ChainStatus = "completed"
 	ChainStatusFailed    ChainStatus = "failed"
@@ -152,9 +153,9 @@ func (c *Chain) Execute(ctx context.Context, executor ChainExecutor) (*ChainResu
 	c.mu.Unlock()
 
 	result := &ChainResult{
-		ChainID:    c.ID,
+		ChainID:     c.ID,
 		StepResults: make([]*StepResult, 0),
-		Success:    true,
+		Success:     true,
 	}
 
 	// Create execution context
