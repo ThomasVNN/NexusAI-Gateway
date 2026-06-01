@@ -123,3 +123,31 @@ func TestHealthzRouteRegistered(t *testing.T) {
 		t.Fatalf("GET /healthz expected 200, got %d", rr.Code)
 	}
 }
+
+// TestAdminRoutesRegistered verifies that admin API routes are registered correctly.
+func TestAdminRoutesRegistered(t *testing.T) {
+	handler := newTestRouter()
+
+	testCases := []struct {
+		path   string
+		method string
+	}{
+		{"/api/providers", "GET"},
+		{"/api/admin/keys", "GET"},
+		{"/api/system/version", "GET"},
+		{"/api/models", "GET"},
+		{"/health", "GET"},
+	}
+
+	for _, tc := range testCases {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code == http.StatusNotFound {
+			t.Errorf("%s %s returned 404; route is not registered", tc.method, tc.path)
+		} else {
+			t.Logf("%s %s -> %d", tc.method, tc.path, rr.Code)
+		}
+	}
+}

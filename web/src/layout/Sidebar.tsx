@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Key,
   Network,
+  GitBranch,
   Users,
   CreditCard,
   BarChart3,
@@ -11,6 +12,8 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
+  Activity,
+  Cpu,
 } from 'lucide-react';
 
 interface NavItem {
@@ -37,6 +40,8 @@ const navSections: NavItem[] = [
     icon: <Key className="w-5 h-5" />,
     children: [
       { id: 'channels', label: 'Channels', icon: <Network className="w-4 h-4" />, path: '/channels' },
+      { id: 'providers', label: 'Providers', icon: <Cpu className="w-4 h-4" />, path: '/providers' },
+      { id: 'combos', label: 'Combos', icon: <GitBranch className="w-4 h-4" />, path: '/combos' },
       { id: 'tokens', label: 'API Keys', icon: <Key className="w-4 h-4" />, path: '/tokens' },
       { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" />, path: '/users' },
     ],
@@ -55,6 +60,7 @@ const navSections: NavItem[] = [
     label: 'System',
     icon: <Settings className="w-5 h-5" />,
     children: [
+      { id: 'health', label: 'Health', icon: <Activity className="w-4 h-4" />, path: '/health' },
       { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" />, path: '/settings' },
     ],
   },
