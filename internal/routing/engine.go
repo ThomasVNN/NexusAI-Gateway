@@ -139,6 +139,22 @@ func (r *ModelRouter) Route(ctx context.Context, req *RoutingRequest) (*RouteTar
 	candidates := r.findCandidates(req)
 
 	if len(candidates) == 0 {
+		// If a specific model was requested but not found, fall back to cheapest model
+		if req.RequestedModel != "" {
+			fallback := r.findFallback()
+			if fallback != nil {
+				slog.WarnContext(ctx, "Requested model unavailable, falling back",
+					slog.String("requested_model", req.RequestedModel),
+					slog.String("fallback_model", fallback.Name),
+				)
+				return &RouteTarget{
+					ProviderID: fallback.Provider,
+					ModelName:  fallback.Name,
+					Weight:     100,
+					Priority:   fallback.Priority,
+				}, nil
+			}
+		}
 		slog.WarnContext(ctx, "No model candidates found",
 			slog.String("requested_model", req.RequestedModel),
 			slog.Any("capabilities", req.RequiredCapabilities),
@@ -179,22 +195,18 @@ type RoutingRequest struct {
 func (r *ModelRouter) findCandidates(req *RoutingRequest) []*ModelInfo {
 	var candidates []*ModelInfo
 
-	// If specific model requested and available, prioritize it
+	// If specific model requested, it takes priority over strategy-based selection
 	if req.RequestedModel != "" {
 		if model, ok := r.models[req.RequestedModel]; ok && model.IsActive {
-			// Check capabilities
-			if r.hasCapabilities(model, req.RequiredCapabilities) {
-				candidates = append(candidates, model)
-			}
+			candidates = append(candidates, model)
 		}
+		// Return early so strategy selection is skipped when user requests a specific model
+		return candidates
 	}
 
 	// Find fallback models with similar capabilities
 	for _, model := range r.models {
 		if !model.IsActive {
-			continue
-		}
-		if model.Name == req.RequestedModel {
 			continue
 		}
 		if r.hasCapabilities(model, req.RequiredCapabilities) {
@@ -207,6 +219,28 @@ func (r *ModelRouter) findCandidates(req *RoutingRequest) []*ModelInfo {
 	}
 
 	return candidates
+}
+
+// findFallback returns the default model when a specific model is not found
+func (r *ModelRouter) findFallback() *ModelInfo {
+	// Prefer gpt-4o-mini as the standard default fallback model
+	if model, ok := r.models["gpt-4o-mini"]; ok && model.IsActive {
+		return model
+	}
+	// Fall back to cheapest if gpt-4o-mini is not available
+	var fallback *ModelInfo
+	var minCost float64 = -1
+	for _, model := range r.models {
+		if !model.IsActive {
+			continue
+		}
+		cost := model.CostPer1KInput + model.CostPer1KOutput
+		if minCost < 0 || cost < minCost {
+			minCost = cost
+			fallback = model
+		}
+	}
+	return fallback
 }
 
 // hasCapabilities checks if a model supports required capabilities
@@ -253,7 +287,7 @@ func (r *ModelRouter) selectBest(candidates []*ModelInfo, strategy RoutingStrate
 // selectByCost picks the cheapest model
 func (r *ModelRouter) selectByCost(candidates []*ModelInfo) *ModelInfo {
 	best := candidates[0]
-	minCost := best.CostPer1KInput
+	minCost := best.CostPer1KInput + best.CostPer1KOutput
 	for _, c := range candidates[1:] {
 		cost := c.CostPer1KInput + c.CostPer1KOutput
 		if cost < minCost {

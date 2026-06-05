@@ -38,7 +38,7 @@ func TestModelRouter_Route(t *testing.T) {
 				TenantID:             "tenant-1",
 				RequiredCapabilities: []string{"vision"},
 			},
-			wantModel: "gpt-4o", // first vision-capable model
+			wantModel: "gemini-1.5-pro", // cheapest vision-capable model (cost: 0.00625)
 			wantErr:   false,
 		},
 		{
@@ -47,7 +47,7 @@ func TestModelRouter_Route(t *testing.T) {
 				TenantID:             "tenant-1",
 				RequiredCapabilities: []string{"function_calling"},
 			},
-			wantModel: "gpt-4o", // first function_calling model
+			wantModel: "gemini-1.5-flash", // cheapest function_calling model (cost: 0.000375)
 			wantErr:   false,
 		},
 	}
@@ -260,7 +260,7 @@ func TestDefaultModels(t *testing.T) {
 		cost     float64
 	}{
 		"gpt-4o":            {"openai", 0.02},
-		"gpt-4o-mini":       {"openai", 0.0003},
+		"gpt-4o-mini":       {"openai", 0.00075},
 		"claude-3-5-sonnet": {"anthropic", 0.018},
 		"gemini-1.5-flash":  {"google", 0.000375},
 	}
@@ -275,7 +275,7 @@ func TestDefaultModels(t *testing.T) {
 			t.Errorf("Model %s: expected provider %s, got %s", name, expected.provider, model.Provider)
 		}
 		totalCost := model.CostPer1KInput + model.CostPer1KOutput
-		if totalCost != expected.cost {
+		if totalCost < expected.cost-0.000001 || totalCost > expected.cost+0.000001 {
 			t.Errorf("Model %s: expected cost %f, got %f", name, expected.cost, totalCost)
 		}
 	}
