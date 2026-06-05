@@ -10,6 +10,8 @@ This file serves as your local operational blueprint, defining your role, bounda
 
 The mission of **NexusAI-Gateway** is to provide highly performant, modular, secure, and observable capabilities for the **Enterprise AI Gateway** domain. Every change implemented here must move us closer to a production-grade, highly-available architecture.
 
+**Note:** This repository is backend-only. The admin dashboard was migrated to `Nexus-Control-Center/src/features/gateway/`. Do not reintroduce UI code here.
+
 ---
 
 # Owner Agent
