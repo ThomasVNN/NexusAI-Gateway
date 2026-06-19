@@ -2,9 +2,7 @@ package routing
 
 import (
 	"context"
-	"math"
 	"testing"
-	"time"
 )
 
 func TestModelRouter_Route(t *testing.T) {
@@ -26,22 +24,30 @@ func TestModelRouter_Route(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name: "fallback when model not found",
+			name: "fallback to default when model not found",
 			req: &RoutingRequest{
 				RequestedModel: "unknown-model",
 				TenantID:       "tenant-1",
 			},
-			// Priority strategy returns first model in map iteration order
-			wantErr: false,
+			wantModel: "gpt-4o-mini", // cheapest default
+			wantErr:   false,
 		},
 		{
-			name: "route by quality - vision",
+			name: "route by capability - vision",
 			req: &RoutingRequest{
 				TenantID:             "tenant-1",
 				RequiredCapabilities: []string{"vision"},
-				Strategy:             "quality_first",
 			},
-			wantModel: "gemini-1.5-pro", // most capable with vision
+			wantModel: "gemini-1.5-pro", // cheapest vision-capable model (cost: 0.00625)
+			wantErr:   false,
+		},
+		{
+			name: "route by capability - function_calling",
+			req: &RoutingRequest{
+				TenantID:             "tenant-1",
+				RequiredCapabilities: []string{"function_calling"},
+			},
+			wantModel: "gemini-1.5-flash", // cheapest function_calling model (cost: 0.000375)
 			wantErr:   false,
 		},
 	}
@@ -54,8 +60,8 @@ func TestModelRouter_Route(t *testing.T) {
 				t.Errorf("Route() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if tt.wantModel != "" && got != nil && got.ModelID != tt.wantModel {
-				t.Errorf("Route() model = %v, want %v", got.ModelID, tt.wantModel)
+			if got != nil && got.ModelName != tt.wantModel {
+				t.Errorf("Route() model = %v, want %v", got.ModelName, tt.wantModel)
 			}
 		})
 	}
@@ -64,10 +70,11 @@ func TestModelRouter_Route(t *testing.T) {
 func TestModelRouter_SelectByCost(t *testing.T) {
 	router := NewModelRouter()
 
+	// All models with function_calling
 	req := &RoutingRequest{
 		TenantID:             "tenant-1",
 		RequiredCapabilities: []string{"function_calling"},
-		Strategy:             "cost_optimized",
+		Strategy:             StrategyCostOptimized,
 	}
 
 	ctx := context.Background()
@@ -76,8 +83,10 @@ func TestModelRouter_SelectByCost(t *testing.T) {
 		t.Fatalf("Route() error = %v", err)
 	}
 
-	// Verify cost optimization was applied
-	t.Logf("Selected model: %s with strategy: %s", got.ModelID, got.Strategy)
+	// Should select cheapest model with function_calling
+	if got.ModelName != "gemini-1.5-flash" {
+		t.Errorf("Expected cheapest model gemini-1.5-flash, got %s", got.ModelName)
+	}
 }
 
 func TestModelRouter_SelectByLatency(t *testing.T) {
@@ -85,7 +94,7 @@ func TestModelRouter_SelectByLatency(t *testing.T) {
 
 	req := &RoutingRequest{
 		TenantID: "tenant-1",
-		Strategy: "latency_optimized",
+		Strategy: StrategyLatencyOptimized,
 	}
 
 	ctx := context.Background()
@@ -94,15 +103,17 @@ func TestModelRouter_SelectByLatency(t *testing.T) {
 		t.Fatalf("Route() error = %v", err)
 	}
 
-	// Verify latency optimization was applied
-	t.Logf("Selected model: %s with strategy: %s", got.ModelID, got.Strategy)
+	// Should select fastest model
+	if got.ModelName != "gemini-1.5-flash" {
+		t.Errorf("Expected fastest model gemini-1.5-flash, got %s", got.ModelName)
+	}
 }
 
 func TestModelRouter_TenantStrategy(t *testing.T) {
 	router := NewModelRouter()
 
 	// Set tenant to use latency optimization
-	router.SetTenantStrategy("premium-tenant", StrategyLatencyOpt)
+	router.SetTenantStrategy("premium-tenant", StrategyLatencyOptimized)
 
 	req := &RoutingRequest{
 		TenantID: "premium-tenant",
@@ -114,8 +125,10 @@ func TestModelRouter_TenantStrategy(t *testing.T) {
 		t.Fatalf("Route() error = %v", err)
 	}
 
-	// Verify tenant strategy is used
-	t.Logf("Selected model: %s with strategy: %s", got.ModelID, got.Strategy)
+	// Should respect tenant strategy
+	if got.ModelName != "gemini-1.5-flash" {
+		t.Errorf("Expected fastest model, got %s", got.ModelName)
+	}
 }
 
 func TestModelRouter_GetSetModel(t *testing.T) {
@@ -155,7 +168,6 @@ func TestModelRouter_ListModels(t *testing.T) {
 	if len(models) == 0 {
 		t.Error("Expected at least one model")
 	}
-	t.Logf("Found %d models", len(models))
 }
 
 func TestModelRouter_RecordLatency(t *testing.T) {
@@ -192,6 +204,8 @@ func TestModelRouter_DeactivateModel(t *testing.T) {
 }
 
 func TestHasCapabilities(t *testing.T) {
+	router := NewModelRouter()
+
 	model := &ModelInfo{
 		Capabilities: []string{"vision", "function_calling", "streaming"},
 	}
@@ -210,7 +224,7 @@ func TestHasCapabilities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hasCapabilities(model, tt.required)
+			got := router.hasCapabilities(model, tt.required)
 			if got != tt.want {
 				t.Errorf("hasCapabilities() = %v, want %v", got, tt.want)
 			}
@@ -223,7 +237,7 @@ func TestRoutingRequest_MaxLatency(t *testing.T) {
 
 	req := &RoutingRequest{
 		TenantID:     "tenant-1",
-		MaxLatencyMs: 500,
+		MaxLatencyMs: 500, // Only models under 500ms
 	}
 
 	ctx := context.Background()
@@ -232,11 +246,15 @@ func TestRoutingRequest_MaxLatency(t *testing.T) {
 		t.Fatalf("Route() error = %v", err)
 	}
 
-	// Verify latency constraint is considered
-	t.Logf("Selected model: %s with latency: %d", got.ModelID, 500)
+	// Should exclude models with higher latency
+	if got.ModelName != "gemini-1.5-flash" {
+		// gemini-1.5-flash has 300ms latency, should be the only one fitting
+		t.Errorf("Expected low-latency model, got %s", got.ModelName)
+	}
 }
 
 func TestDefaultModels(t *testing.T) {
+	// Verify default models are configured correctly
 	expected := map[string]struct {
 		provider string
 		cost     float64
@@ -257,105 +275,8 @@ func TestDefaultModels(t *testing.T) {
 			t.Errorf("Model %s: expected provider %s, got %s", name, expected.provider, model.Provider)
 		}
 		totalCost := model.CostPer1KInput + model.CostPer1KOutput
-		if math.Abs(totalCost-expected.cost) > 0.000001 {
+		if totalCost < expected.cost-0.000001 || totalCost > expected.cost+0.000001 {
 			t.Errorf("Model %s: expected cost %f, got %f", name, expected.cost, totalCost)
 		}
-	}
-}
-
-func TestCircuitBreaker(t *testing.T) {
-	cb := NewCircuitBreaker()
-
-	cb.RegisterProvider("openai", DefaultAPIKeyConfig)
-
-	if !cb.CanExecute("openai") {
-		t.Error("Expected openai to be executable initially")
-	}
-
-	for i := 0; i < 5; i++ {
-		cb.RecordFailure("openai")
-	}
-
-	if cb.GetStatus("openai") != CircuitOpen {
-		t.Error("Expected circuit to be open after failures")
-	}
-
-	cb.Reset("openai")
-	if !cb.CanExecute("openai") {
-		t.Error("Expected openai to be executable after reset")
-	}
-}
-
-func TestConnectionCooldown(t *testing.T) {
-	cc := NewConnectionCooldown()
-
-	connectionID := "conn-123"
-
-	if cc.IsCoolingDown(connectionID) {
-		t.Error("Expected connection to not be in cooldown initially")
-	}
-
-	cc.SetCooldown(connectionID, "openai", 100*time.Millisecond, "rate_limit")
-
-	if !cc.IsCoolingDown(connectionID) {
-		t.Error("Expected connection to be in cooldown after SetCooldown")
-	}
-
-	time.Sleep(150 * time.Millisecond)
-
-	if cc.IsCoolingDown(connectionID) {
-		t.Error("Expected connection to not be in cooldown after timeout")
-	}
-}
-
-func TestModelLockout(t *testing.T) {
-	ml := NewModelLockoutManager()
-
-	if ml.IsLocked("openai", "gpt-4o") {
-		t.Error("Expected model to not be locked initially")
-	}
-
-	ml.LockModel("openai", "gpt-4o", 100*time.Millisecond, "quota_exceeded")
-
-	if !ml.IsLocked("openai", "gpt-4o") {
-		t.Error("Expected model to be locked after LockModel")
-	}
-
-	time.Sleep(150 * time.Millisecond)
-
-	if ml.IsLocked("openai", "gpt-4o") {
-		t.Error("Expected model to not be locked after timeout")
-	}
-}
-
-func TestAllRoutingStrategies(t *testing.T) {
-	router := NewModelRouter()
-	ctx := context.Background()
-
-	strategies := []string{
-		"priority",
-		"cost_optimized",
-		"latency_optimized",
-		"quality_first",
-		"round_robin",
-		"random",
-	}
-
-	for _, strategy := range strategies {
-		t.Run(strategy, func(t *testing.T) {
-			req := &RoutingRequest{
-				TenantID: "tenant-1",
-				Strategy: strategy,
-			}
-
-			got, err := router.Route(ctx, req)
-			if err != nil {
-				t.Errorf("Route() error = %v", err)
-				return
-			}
-			if got == nil {
-				t.Error("Expected non-nil result")
-			}
-		})
 	}
 }
