@@ -1,360 +1,393 @@
 package privacy
 
 import (
+	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 )
 
-// PIIType represents types of personally identifiable information
-type PIIType string
+// RedactionLevel defines how aggressively PII should be redacted
+type RedactionLevel int
 
 const (
-	PIIEmail       PIIType = "email"
-	PIIPhone       PIIType = "phone"
-	PIICreditCard  PIIType = "credit_card"
-	PIISSN         PIIType = "ssn"
-	PIIIPAddress   PIIType = "ip_address"
-	PIIPassport    PIIType = "passport"
-	PIIDriverLicense PIIType = "driver_license"
-	PIIDateOfBirth PIIType = "date_of_birth"
-	PIIAddress     PIIType = "address"
-	PIIName        PIIType = "name"
-	PIIPassword    PIIType = "password"
-	PIIToken       PIIType = "token"
+	RedactionLevelNone RedactionLevel = iota
+	RedactionLevelBasic
+	RedactionLevelStandard
+	RedactionLevelStrict
 )
 
-// PIIDetection represents a detected PII entity
-type PIIDetection struct {
-	Type      PIIType `json:"type"`
-	Value     string  `json:"value"`
-	Start     int     `json:"start"`
-	End       int     `json:"end"`
-	Masked    string  `json:"masked"`
-	Confirmed bool    `json:"confirmed"`
+// RedactionRule defines a single redaction rule
+type RedactionRule struct {
+	Type     PIIType
+	Marker   string
+	Enabled  bool
+	CountCap int // Maximum number of redactions (0 = unlimited)
 }
 
-// PrivacyConfig defines privacy filtering configuration
-type PrivacyConfig struct {
-	// EnablePIIRedaction enables automatic PII redaction
-	EnablePIIRedaction bool
-	// EnableResponseFiltering enables filtering of responses
-	EnableResponseFiltering bool
-	// EnableAuditLogging enables compliance audit logging
-	EnableAuditLogging bool
-	// EnabledTypes specifies which PII types to detect
-	EnabledTypes []PIIType
-	// CustomPatterns additional detection patterns
-	CustomPatterns map[string]*regexp.Regexp
+// FilterConfig holds the configuration for the redaction engine
+type FilterConfig struct {
+	DefaultMarker  string
+	Level          RedactionLevel
+	Rules          map[PIIType]RedactionRule
+	MaxRedactions  int
+	PreserveFormat bool
+	CaseSensitive  bool
 }
 
-// DefaultPrivacyConfig returns the default privacy configuration
-func DefaultPrivacyConfig() *PrivacyConfig {
-	return &PrivacyConfig{
-		EnablePIIRedaction:       true,
-		EnableResponseFiltering:  true,
-		EnableAuditLogging:       true,
-		EnabledTypes: []PIIType{
-			PIIEmail, PIIPhone, PIICreditCard, PIISSN,
-			PIIIPAddress, PIIPassport, PIIDriverLicense,
-			PIIPassword, PIIToken,
+// DefaultFilterConfig returns the standard filter configuration
+func DefaultFilterConfig() *FilterConfig {
+	return &FilterConfig{
+		DefaultMarker: "[REDACTED]",
+		Level:         RedactionLevelStandard,
+		Rules: map[PIIType]RedactionRule{
+			PIITypeEmail: {
+				Type:     PIITypeEmail,
+				Marker:   "[REDACTED_EMAIL]",
+				Enabled:  true,
+				CountCap: 50,
+			},
+			PIITypePhone: {
+				Type:     PIITypePhone,
+				Marker:   "[REDACTED_PHONE]",
+				Enabled:  true,
+				CountCap: 50,
+			},
+			PIITypeSSN: {
+				Type:     PIITypeSSN,
+				Marker:   "[REDACTED_SSN]",
+				Enabled:  true,
+				CountCap: 10,
+			},
+			PIITypeCreditCard: {
+				Type:     PIITypeCreditCard,
+				Marker:   "[REDACTED_CARD]",
+				Enabled:  true,
+				CountCap: 10,
+			},
+			PIITypeIPAddress: {
+				Type:     PIITypeIPAddress,
+				Marker:   "[REDACTED_IP]",
+				Enabled:  true,
+				CountCap: 50,
+			},
 		},
-		CustomPatterns: make(map[string]*regexp.Regexp),
+		MaxRedactions:  200,
+		PreserveFormat: false,
+		CaseSensitive:  false,
 	}
 }
 
-// EnhancedEngine provides advanced PII detection and redaction
-type EnhancedEngine struct {
-	patterns  map[PIIType]*regexp.Regexp
-	config    *PrivacyConfig
-	maskFuncs map[PIIType]func(string) string
+// Engine handles PII detection and redaction with configurable rules
+type Engine struct {
+	detector *Detector
+	config   *FilterConfig
+	mu       sync.RWMutex
 }
 
-// NewEnhancedEngine creates a new enhanced privacy engine
-func NewEnhancedEngine(config *PrivacyConfig) *EnhancedEngine {
-	if config == nil {
-		config = DefaultPrivacyConfig()
+// NewEngine creates a new redaction engine with default configuration
+func NewEngine() *Engine {
+	return &Engine{
+		detector: NewDetector(),
+		config:   DefaultFilterConfig(),
 	}
-
-	engine := &EnhancedEngine{
-		patterns:  make(map[PIIType]*regexp.Regexp),
-		config:    config,
-		maskFuncs: make(map[PIIType]func(string) string),
-	}
-
-	// Initialize default patterns
-	engine.patterns[PIIEmail] = regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
-	engine.patterns[PIIPhone] = regexp.MustCompile(`\+?\d{1,4}?[-.\s]?\(?\d{1,3}?\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}`)
-	engine.patterns[PIICreditCard] = regexp.MustCompile(`\b(?:\d[ -]*?){13,19}\b`)
-	engine.patterns[PIISSN] = regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)
-	engine.patterns[PIIIPAddress] = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	engine.patterns[PIIPassport] = regexp.MustCompile(`\b[A-Z]{1,2}\d{6,9}\b`)
-	engine.patterns[PIIDriverLicense] = regexp.MustCompile(`\b[A-Z]{1,2}\d{5,8}\b`)
-	engine.patterns[PIIPassword] = regexp.MustCompile(`(?i)(?:password|pwd|pass)\s*[:=]\s*\S+`)
-	engine.patterns[PIIToken] = regexp.MustCompile(`(?i)(?:api_key|apikey|token|auth)\s*[:=]\s*['"]?[\w-]{16,}['"]?`)
-	
-	// Date of birth patterns
-	engine.patterns[PIIDateOfBirth] = regexp.MustCompile(`\b(?:DOB|dob|Date\s*of\s*birth)\s*[:=]\s*\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}\b`)
-
-	// Initialize mask functions
-	engine.maskFuncs[PIIEmail] = func(s string) string {
-		parts := strings.Split(s, "@")
-		if len(parts) == 2 {
-			local := parts[0]
-			domain := parts[1]
-			masked := strings.Repeat("*", len(local)-2) + local[len(local)-2:]
-			return masked + "@" + domain
-		}
-		return "[REDACTED_EMAIL]"
-	}
-	engine.maskFuncs[PIIPhone] = func(s string) string {
-		return "[REDACTED_PHONE]"
-	}
-	engine.maskFuncs[PIICreditCard] = func(s string) string {
-		digits := strings.ReplaceAll(s, " ", "")
-		if len(digits) >= 4 {
-			return "****-****-****-" + digits[len(digits)-4:]
-		}
-		return "[REDACTED_CARD]"
-	}
-	engine.maskFuncs[PIISSN] = func(s string) string {
-		return "***-**-****"
-	}
-	engine.maskFuncs[PIIIPAddress] = func(s string) string {
-		return "[REDACTED_IP]"
-	}
-	engine.maskFuncs[PIIPassport] = func(s string) string {
-		return "[REDACTED_PASSPORT]"
-	}
-	engine.maskFuncs[PIIDriverLicense] = func(s string) string {
-		return "[REDACTED_LICENSE]"
-	}
-	engine.maskFuncs[PIIPassword] = func(s string) string {
-		return "[REDACTED_PASSWORD]"
-	}
-	engine.maskFuncs[PIIToken] = func(s string) string {
-		return "[REDACTED_TOKEN]"
-	}
-	engine.maskFuncs[PIIDateOfBirth] = func(s string) string {
-		return "[REDACTED_DOB]"
-	}
-
-	// Add custom patterns
-	for name, pattern := range config.CustomPatterns {
-		piType := PIIType(name)
-		engine.patterns[piType] = pattern
-	}
-
-	return engine
 }
 
-// DetectPII finds all PII entities in text
-func (e *EnhancedEngine) DetectPII(text string) []PIIDetection {
-	var detections []PIIDetection
+// NewEngineWithConfig creates a new redaction engine with custom configuration
+func NewEngineWithConfig(config *FilterConfig) *Engine {
+	return &Engine{
+		detector: NewDetector(),
+		config:   config,
+	}
+}
 
-	for _, piiType := range e.config.EnabledTypes {
-		pattern, ok := e.patterns[piiType]
-		if !ok {
+// Redact sanitizes text by replacing all detected PII with appropriate markers
+func (e *Engine) Redact(text string) string {
+	if e.config.Level == RedactionLevelNone {
+		return text
+	}
+
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	result := text
+	totalRedactions := 0
+
+	for piiType, rule := range e.config.Rules {
+		if !rule.Enabled {
 			continue
 		}
 
-		indices := pattern.FindAllStringIndex(text, -1)
-		for _, idx := range indices {
-			match := text[idx[0]:idx[1]]
-			detections = append(detections, PIIDetection{
-				Type:      piiType,
-				Value:     match,
-				Start:     idx[0],
-				End:       idx[1],
-				Masked:    e.maskFuncs[piiType](match),
-				Confirmed: e.confirmMatch(piiType, match),
+		pattern := e.detector.patterns[piiType]
+		if pattern == nil {
+			continue
+		}
+
+		marker := rule.Marker
+		if marker == "" {
+			marker = e.config.DefaultMarker
+		}
+
+		if e.config.CaseSensitive {
+			result = pattern.Pattern.ReplaceAllStringFunc(result, func(match string) string {
+				if rule.CountCap > 0 && totalRedactions >= e.config.MaxRedactions {
+					return match
+				}
+				totalRedactions++
+				return marker
+			})
+		} else {
+			// Case-insensitive replacement
+			result = pattern.Pattern.ReplaceAllStringFunc(result, func(match string) string {
+				if rule.CountCap > 0 && totalRedactions >= e.config.MaxRedactions {
+					return match
+				}
+				totalRedactions++
+				return marker
 			})
 		}
 	}
 
-	return detections
+	return result
 }
 
-// confirmMatch provides additional validation for detected PII
-func (e *EnhancedEngine) confirmMatch(piiType PIIType, value string) bool {
-	switch piiType {
-	case PIICreditCard:
-		// Luhn algorithm validation
-		return e.luhnCheck(value)
-	case PIIIPAddress:
-		// Basic IP format check
-		return e.isValidIP(value)
-	default:
-		return true
-	}
-}
-
-// luhnCheck validates credit card numbers using Luhn algorithm
-func (e *EnhancedEngine) luhnCheck(card string) bool {
-	digits := strings.Map(func(r rune) rune {
-		if r >= '0' && r <= '9' {
-			return r
-		}
-		return -1
-	}, card)
-
-	if len(digits) < 13 || len(digits) > 19 {
-		return false
-	}
-
-	sum := 0
-	alternate := false
-	for i := len(digits) - 1; i >= 0; i-- {
-		n := int(digits[i] - '0')
-		if alternate {
-			n *= 2
-			if n > 9 {
-				n = (n % 10) + 1
-			}
-		}
-		sum += n
-		alternate = !alternate
-	}
-
-	return sum%10 == 0
-}
-
-// isValidIP checks if string is a valid IP address
-func (e *EnhancedEngine) isValidIP(ip string) bool {
-	parts := strings.Split(ip, ".")
-	if len(parts) != 4 {
-		return false
-	}
-	for _, part := range parts {
-		val := 0
-		for _, c := range part {
-			if c >= '0' && c <= '9' {
-				val = val*10 + int(c-'0')
-			} else {
-				return false
-			}
-		}
-		if val < 0 || val > 255 {
-			return false
-		}
-	}
-	return true
-}
-
-// Redact replaces all detected PII with masked values
-func (e *EnhancedEngine) Redact(text string) string {
-	if !e.config.EnablePIIRedaction {
+// RedactWithLevel applies redaction at a specific level
+func (e *Engine) RedactWithLevel(text string, level RedactionLevel) string {
+	if level == RedactionLevelNone {
 		return text
 	}
 
+	// Temporarily adjust level
+	e.mu.Lock()
+	originalLevel := e.config.Level
+	e.config.Level = level
+	e.mu.Unlock()
+
+	result := e.Redact(text)
+
+	// Restore original level
+	e.mu.Lock()
+	e.config.Level = originalLevel
+	e.mu.Unlock()
+
+	return result
+}
+
+// RedactPartial redacts only specific PII types
+func (e *Engine) RedactPartial(text string, types []PIIType) string {
+	if len(types) == 0 {
+		return text
+	}
+
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
 	result := text
-	detections := e.DetectPII(text)
 
-	// Process detections from end to start to preserve indices
-	for i := len(detections) - 1; i >= 0; i-- {
-		d := detections[i]
-		if d.Confirmed || e.config.EnablePIIRedaction {
-			result = result[:d.Start] + d.Masked + result[d.End:]
+	for _, piiType := range types {
+		rule, ok := e.config.Rules[piiType]
+		if !ok || !rule.Enabled {
+			continue
 		}
-	}
 
-	return result
-}
-
-// RedactStructured replaces PII in structured data (JSON-like maps)
-func (e *EnhancedEngine) RedactStructured(data map[string]interface{}) map[string]interface{} {
-	if !e.config.EnablePIIRedaction {
-		return data
-	}
-
-	result := make(map[string]interface{})
-	for key, value := range data {
-		switch v := value.(type) {
-		case string:
-			result[key] = e.Redact(v)
-		case map[string]interface{}:
-			result[key] = e.RedactStructured(v)
-		case []interface{}:
-			result[key] = e.RedactSlice(v)
-		default:
-			result[key] = v
+		pattern := e.detector.patterns[piiType]
+		if pattern == nil {
+			continue
 		}
-	}
-	return result
-}
 
-// RedactSlice redacts PII in slices
-func (e *EnhancedEngine) RedactSlice(data []interface{}) []interface{} {
-	result := make([]interface{}, len(data))
-	for i, item := range data {
-		switch v := item.(type) {
-		case string:
-			result[i] = e.Redact(v)
-		case map[string]interface{}:
-			result[i] = e.RedactStructured(v)
-		default:
-			result[i] = v
+		marker := rule.Marker
+		if marker == "" {
+			marker = e.config.DefaultMarker
 		}
-	}
-	return result
-}
 
-// FilterResponse filters potentially sensitive content from LLM responses
-func (e *EnhancedEngine) FilterResponse(response string) string {
-	if !e.config.EnableResponseFiltering {
-		return response
-	}
-
-	result := response
-
-	// Remove potential code injection attempts
-	injectionPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(?:system|exec|eval|os\.system|subprocess)\s*\(`),
-		regexp.MustCompile(`(?i)import\s+os|from\s+os\s+import`),
-		regexp.MustCompile(`(?i)rm\s+-rf|rm\s+/|del\s+/[a-z]`),
-		regexp.MustCompile(`(?i)(?:password|secret|key)\s*=\s*['"][^'"]+['"]`),
-	}
-	for _, pattern := range injectionPatterns {
-		result = pattern.ReplaceAllString(result, "[FILTERED]")
+		result = pattern.Pattern.ReplaceAllString(result, marker)
 	}
 
 	return result
 }
 
-// GetEnabledTypes returns list of enabled PII types
-func (e *EnhancedEngine) GetEnabledTypes() []PIIType {
-	return e.config.EnabledTypes
+// Detect returns all detected PII in the text
+func (e *Engine) Detect(text string) []DetectResult {
+	return e.detector.Detect(text)
 }
 
-// AddCustomPattern adds a custom detection pattern
-func (e *EnhancedEngine) AddCustomPattern(name string, pattern *regexp.Regexp) {
-	piType := PIIType(name)
-	e.patterns[piType] = pattern
-	e.maskFuncs[piType] = func(s string) string {
-		return "[REDACTED_" + strings.ToUpper(name) + "]"
+// DetectPartial returns only specific PII types
+func (e *Engine) DetectPartial(text string, types []PIIType) []DetectResult {
+	return e.detector.DetectWithFilter(text, types)
+}
+
+// GetRedactionCount returns the number of redactions that would be performed
+func (e *Engine) GetRedactionCount(text string) map[PIIType]int {
+	counts := make(map[PIIType]int)
+	results := e.Detect(text)
+
+	for _, result := range results {
+		counts[result.Type]++
+	}
+
+	return counts
+}
+
+// GetTotalRedactionCount returns the total number of PII instances detected
+func (e *Engine) GetTotalRedactionCount(text string) int {
+	return len(e.Detect(text))
+}
+
+// UpdateConfig updates the engine configuration
+func (e *Engine) UpdateConfig(config *FilterConfig) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.config = config
+}
+
+// GetConfig returns a copy of the current configuration
+func (e *Engine) GetConfig() *FilterConfig {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	// Return a copy to prevent concurrent access issues
+	configCopy := *e.config
+	rulesCopy := make(map[PIIType]RedactionRule)
+	for k, v := range e.config.Rules {
+		rulesCopy[k] = v
+	}
+	configCopy.Rules = rulesCopy
+
+	return &configCopy
+}
+
+// EnableType enables redaction for a specific PII type
+func (e *Engine) EnableType(piiType PIIType) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if rule, ok := e.config.Rules[piiType]; ok {
+		rule.Enabled = true
+		e.config.Rules[piiType] = rule
 	}
 }
 
-// PrivacyReport provides a summary of privacy scanning results
-type PrivacyReport struct {
-	TotalDetections int                `json:"total_detections"`
-	ByType          map[PIIType]int    `json:"by_type"`
-	Redactions      int                `json:"redactions"`
-	Filters         int                `json:"filters"`
-	Timestamp       string             `json:"timestamp"`
+// DisableType disables redaction for a specific PII type
+func (e *Engine) DisableType(piiType PIIType) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if rule, ok := e.config.Rules[piiType]; ok {
+		rule.Enabled = false
+		e.config.Rules[piiType] = rule
+	}
 }
 
-// GenerateReport creates a privacy report from detections
-func GenerateReport(detections []PIIDetection, originalLen, resultLen int) PrivacyReport {
-	byType := make(map[PIIType]int)
+// SetMarker sets a custom marker for a specific PII type
+func (e *Engine) SetMarker(piiType PIIType, marker string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if rule, ok := e.config.Rules[piiType]; ok {
+		rule.Marker = marker
+		e.config.Rules[piiType] = rule
+	}
+}
+
+// GetMarker returns the current marker for a specific PII type
+func (e *Engine) GetMarker(piiType PIIType) string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if rule, ok := e.config.Rules[piiType]; ok {
+		return rule.Marker
+	}
+	return e.config.DefaultMarker
+}
+
+// SetLevel sets the redaction level
+func (e *Engine) SetLevel(level RedactionLevel) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.config.Level = level
+}
+
+// SetMaxRedactions sets the maximum number of total redactions
+func (e *Engine) SetMaxRedactions(max int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.config.MaxRedactions = max
+}
+
+// RedactionResult holds the result of a redaction operation
+type RedactionResult struct {
+	Original      string
+	Redacted      string
+	RedactionType []PIIType
+	Counts        map[PIIType]int
+	TotalCount    int
+	Level         RedactionLevel
+}
+
+// RedactWithResult performs redaction and returns detailed results
+func (e *Engine) RedactWithResult(text string) *RedactionResult {
+	detections := e.Detect(text)
+
+	counts := make(map[PIIType]int)
+	var types []PIIType
+	typeSet := make(map[PIIType]bool)
+
 	for _, d := range detections {
-		byType[d.Type]++
+		counts[d.Type]++
+		if !typeSet[d.Type] {
+			types = append(types, d.Type)
+			typeSet[d.Type] = true
+		}
 	}
 
-	return PrivacyReport{
-		TotalDetections: len(detections),
-		ByType:          byType,
-		Redactions:      originalLen - resultLen,
-		Filters:         0,
-		Timestamp:       "2026-05-30T00:00:00Z",
+	return &RedactionResult{
+		Original:      text,
+		Redacted:      e.Redact(text),
+		RedactionType: types,
+		Counts:        counts,
+		TotalCount:    len(detections),
+		Level:         e.config.Level,
 	}
+}
+
+// ReplaceMarker replaces a specific marker in redacted text with another
+func (e *Engine) ReplaceMarker(text string, oldMarker string, newMarker string) string {
+	return strings.ReplaceAll(text, oldMarker, newMarker)
+}
+
+// RestoreMarkers attempts to restore redacted content with original values
+// This is only possible if the original values were stored during redaction
+func (e *Engine) RestoreMarkers(text string, originals map[string]string) string {
+	result := text
+	for original, marker := range originals {
+		result = strings.ReplaceAll(result, marker, original)
+	}
+	return result
+}
+
+// ScanAndLog scans text for PII and logs findings
+func (e *Engine) ScanAndLog(text string, logger *slog.Logger) {
+	results := e.Detect(text)
+	if len(results) == 0 {
+		logger.Debug("No PII detected in text")
+		return
+	}
+
+	counts := make(map[PIIType]int)
+	for _, r := range results {
+		counts[r.Type]++
+	}
+
+	for piiType, count := range counts {
+		logger.Info("PII detected",
+			slog.String("type", string(piiType)),
+			slog.Int("count", count),
+		)
+	}
+}
+
+// ValidatePattern checks if a regex pattern is valid
+func ValidatePattern(pattern string) bool {
+	_, err := regexp.Compile(pattern)
+	return err == nil
 }

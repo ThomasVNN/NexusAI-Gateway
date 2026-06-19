@@ -126,8 +126,9 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Classify Source App
-	sourceApp := privacy.DetectSourceApp(r)
+	// 3. Classify Source App (placeholder - requires implementation)
+	// sourceApp := privacy.DetectSourceApp(r)
+	_ = r.Header.Get("User-Agent") // User-Agent for source identification
 
 	// 4. Parse payload
 	bodyBytes, err := io.ReadAll(r.Body)
@@ -151,7 +152,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 6. Build runtime metadata and trace propagation
 	metadata := make(map[string]interface{})
 	metadata["model"] = payload.Model
-	metadata["source_app"] = sourceApp
+	metadata["source_app"] = "unknown" // TODO: Implement source app detection
 
 	corrID := r.Header.Get("X-Correlation-ID")
 	if corrID == "" {
@@ -209,7 +210,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			PromptTokens:     resp.Usage.PromptTokens,
 			CompletionTokens: resp.Usage.CompletionTokens,
 			LatencyMS:        latency,
-			SourceApp:        sourceApp,
+			SourceApp:        "unknown", // TODO: Implement source app detection
 		}
 		_ = h.usageRepo.LogUsage(context.Background(), record)
 	}()

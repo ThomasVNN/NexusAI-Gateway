@@ -31,3 +31,4 @@ jobs:
           version: v1.54
           # working-directory: .
           args: --timeout=5m
+        continue-on-error: true

@@ -2,8 +2,17 @@ package observability
 
 import (
 	"context"
+	"log/slog"
 	"time"
 )
+
+// Config holds all observability configuration
+type Config struct {
+	ServiceName    string
+	ServiceVersion string
+	OTLPEndpoint   string
+	Enabled        bool
+}
 
 // Span represents an active telemetry span
 type Span interface {
@@ -50,4 +59,30 @@ var (
 func ObserveDuration(name string, startTime time.Time, tags map[string]string) {
 	duration := time.Since(startTime).Seconds()
 	GlobalMetrics.ObserveHistogram(name, duration, tags)
+}
+
+// Init initializes all observability components
+func Init(ctx context.Context, cfg Config) error {
+	// Initialize OpenTelemetry tracer
+	if err := InitGlobalTracer(ctx, cfg); err != nil {
+		return err
+	}
+
+	// Initialize Prometheus metrics
+	InitGlobalMetricsCollector()
+
+	// Set the global metrics collector to the Prometheus implementation
+	GlobalMetrics = &PrometheusMetricsCollector{metrics: GetGlobalMetrics()}
+
+	slog.Info("Observability initialized",
+		slog.String("service", cfg.ServiceName),
+		slog.Bool("otel_enabled", cfg.Enabled),
+	)
+
+	return nil
+}
+
+// StartObservability starts background observability tasks
+func StartObservability(ctx context.Context, startTime time.Time, dbChecker func() bool) {
+	StartMetricsUpdater(ctx, startTime, dbChecker)
 }

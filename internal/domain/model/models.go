@@ -1,18 +1,45 @@
 package model
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 // RegisteredKey represents an authorized client API key
 type RegisteredKey struct {
-	ID          string    `json:"id"`
-	KeyHash     string    `json:"key_hash"`
-	Name        string    `json:"name"`
-	SourceApp   string    `json:"source_app"`
-	DailyQuota  int       `json:"daily_quota"`
-	HourlyQuota int       `json:"hourly_quota"`
-	Active      bool      `json:"active"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string       `json:"id"`
+	KeyHash     string       `json:"key_hash"`
+	KeyPrefix   string       `json:"key_prefix"`
+	Name        string       `json:"name"`
+	SourceApp   string       `json:"source_app"` // tenant_id
+	DailyQuota  int          `json:"daily_quota"`
+	HourlyQuota int          `json:"hourly_quota"`
+	Scopes      []string     `json:"scopes"`
+	ExpiresAt   sql.NullTime `json:"expires_at"`
+	RevokedAt   sql.NullTime `json:"revoked_at"`
+	CreatedBy   string       `json:"created_by"`
+	Active      bool         `json:"active"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+	LastUsedAt  sql.NullTime `json:"last_used_at"`
+}
+
+// IsExpired checks if the key has expired.
+func (k *RegisteredKey) IsExpired() bool {
+	if !k.ExpiresAt.Valid {
+		return false
+	}
+	return time.Now().After(k.ExpiresAt.Time)
+}
+
+// IsRevoked checks if the key has been revoked.
+func (k *RegisteredKey) IsRevoked() bool {
+	return k.RevokedAt.Valid
+}
+
+// IsValid checks if the key is valid for use.
+func (k *RegisteredKey) IsValid() bool {
+	return k.Active && !k.IsExpired() && !k.IsRevoked()
 }
 
 // UsageRecord represents an individual completion invocation log

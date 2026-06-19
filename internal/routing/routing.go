@@ -12,8 +12,8 @@ type RouteTarget struct {
 	Priority   int
 }
 
-// ModelRouter resolves routes for incoming LLM calls based on policy, availability, and latency
-type ModelRouter interface {
+// RouteResolver defines the interface for model routing
+type RouteResolver interface {
 	Route(ctx context.Context, requestedModel string, tenantID string) (*RouteTarget, error)
 	RecordFailure(ctx context.Context, target *RouteTarget, err error)
 	RecordLatency(ctx context.Context, target *RouteTarget, durationMs int64)

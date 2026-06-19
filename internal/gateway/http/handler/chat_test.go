@@ -115,7 +115,7 @@ func TestChatHandlerSuccess(t *testing.T) {
 	piiEngine := privacy.NewEngine()
 
 	// Pipeline mocks
-	authMock := auth.NewAPIKeyAuthenticator(keyRepo, false)
+	authMock := auth.NewAPIKeyAuthenticator(keyRepo)
 	tenantMock := tenancy.NewDefaultTenantResolver()
 	knowledgeMock := &mockKnowledgeClient{content: "System knowledge context"}
 	skillsMock := &mockSkillsClient{}
@@ -207,7 +207,7 @@ func TestChatHandlerQuotaExceeded(t *testing.T) {
 	piiEngine := privacy.NewEngine()
 
 	pipelineExecutor := runtime.NewPipelineExecutor(
-		auth.NewAPIKeyAuthenticator(keyRepo, false),
+		auth.NewAPIKeyAuthenticator(keyRepo),
 		tenancy.NewDefaultTenantResolver(),
 		piiEngine,
 		&mockKnowledgeClient{},
@@ -255,7 +255,7 @@ func TestChatHandlerUnauthorized(t *testing.T) {
 	piiEngine := privacy.NewEngine()
 
 	pipelineExecutor := runtime.NewPipelineExecutor(
-		auth.NewAPIKeyAuthenticator(keyRepo, false),
+		auth.NewAPIKeyAuthenticator(keyRepo),
 		tenancy.NewDefaultTenantResolver(),
 		piiEngine,
 		&mockKnowledgeClient{},
@@ -303,7 +303,7 @@ func TestChatHandlerDatabaseFailure(t *testing.T) {
 	piiEngine := privacy.NewEngine()
 
 	pipelineExecutor := runtime.NewPipelineExecutor(
-		auth.NewAPIKeyAuthenticator(keyRepo, true),
+		auth.NewAPIKeyAuthenticator(keyRepo),
 		tenancy.NewDefaultTenantResolver(),
 		piiEngine,
 		&mockKnowledgeClient{},
@@ -359,7 +359,7 @@ func TestChatHandlerQuotaDatabaseFailure(t *testing.T) {
 	piiEngine := privacy.NewEngine()
 
 	pipelineExecutor := runtime.NewPipelineExecutor(
-		auth.NewAPIKeyAuthenticator(keyRepo, false),
+		auth.NewAPIKeyAuthenticator(keyRepo),
 		tenancy.NewDefaultTenantResolver(),
 		piiEngine,
 		&mockKnowledgeClient{},
@@ -412,7 +412,7 @@ func TestChatHandlerUpstreamProviderFailure(t *testing.T) {
 	usageRepo := &mockUsageRepo{dailyUsage: 0}
 	piiEngine := privacy.NewEngine()
 
-	authMock := auth.NewAPIKeyAuthenticator(keyRepo, false)
+	authMock := auth.NewAPIKeyAuthenticator(keyRepo)
 	tenantMock := tenancy.NewDefaultTenantResolver()
 	knowledgeMock := &mockKnowledgeClient{}
 	skillsMock := &mockSkillsClient{}

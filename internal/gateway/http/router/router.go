@@ -3,20 +3,28 @@ package router
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/auth"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/billing"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/channel"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/config"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/handler"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/mcp"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/integration"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/log"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/ratelimit"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
 	storage "github.com/ThomasVNN/NexusAI-Gateway/internal/storage/postgres"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/tenancy"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/token"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/user"
 )
 
 var startTime = time.Now()
@@ -83,6 +91,53 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		adminHandler = handler.NewAdminHandler(nil, nil, memStore, false, cfg.InitialPassword)
 	}
 
+	// 4. Initialize rate limiting
+	rateLimitConfig := ratelimit.DefaultRateLimitConfig()
+	rateLimitConfig.RedisURL = cfg.RedisURL
+
+	quotaStorage, err := ratelimit.CreateRedisStorage(cfg.RedisURL)
+	if err != nil {
+		slog.Warn("Failed to initialize Redis rate limiting storage, using in-memory fallback", slog.Any("error", err))
+		quotaStorage = ratelimit.NewInMemoryStorage()
+	}
+
+	quotaManager := ratelimit.NewQuotaManager(quotaStorage, rateLimitConfig)
+	rateLimitMiddleware := ratelimit.NewRateLimitMiddleware(quotaManager, tenantResolver, rateLimitConfig)
+	rateLimitHandler := handler.NewGetRateLimitsHandler(handler.ToQuotaManagerInterface(quotaManager))
+
+	// Initialize new-api services (only if DB is healthy)
+	var apiHandler *handler.APIHandler
+	var chService *channel.Service
+	var tgService *token.Service
+	var uService *user.Service
+	var logService *log.Service
+	var billingService *billing.Service
+
+	if isDbHealthy {
+		// Channel management
+		chRepo := channel.NewRepository(db.DB)
+		chService = channel.NewService(chRepo)
+
+		// Token group management
+		tgRepo := token.NewRepository(db.DB)
+		tgService = token.NewService(tgRepo)
+
+		// User management
+		uRepo := user.NewRepository(db.DB)
+		uService = user.NewService(uRepo)
+
+		// Request logging
+		logRepo := log.NewRepository(db.DB)
+		logService = log.NewService(logRepo)
+
+		// Billing
+		billingRepo := billing.NewRepository(db.DB)
+		billingService = billing.NewService(billingRepo)
+
+		// Initialize API handler with all services
+		apiHandler = handler.NewAPIHandler(chService, tgService, uService, logService, billingService)
+	}
+
 	// OpenAI endpoints
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
 	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
@@ -106,11 +161,99 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux.HandleFunc("/api/auth/login", adminHandler.HandleLogin)
 	mux.HandleFunc("/api/settings/require-login", adminHandler.HandleRequireLogin)
 
+	// Rate Limiting API Endpoints
+	mux.HandleFunc("/v1/rate-limits/status", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/tiers", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/usage", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/reset", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/quota", rateLimitHandler.ServeHTTP)
+	mux.HandleFunc("/v1/rate-limits/health", rateLimitHandler.ServeHTTP)
+
+	// new-api: Channel Management Endpoints
+	if apiHandler != nil {
+		mux.HandleFunc("/api/channels", apiHandler.HandleChannels)
+		mux.HandleFunc("/api/channels/", apiHandler.HandleChannel)
+		mux.HandleFunc("/api/channels/{id}/test", apiHandler.HandleChannelTest)
+
+		// Token Group Endpoints
+		mux.HandleFunc("/api/token-groups", apiHandler.HandleTokenGroups)
+		mux.HandleFunc("/api/token-groups/", apiHandler.HandleTokenGroup)
+
+		// User Management Endpoints
+		mux.HandleFunc("/api/users", apiHandler.HandleUsers)
+		mux.HandleFunc("/api/users/", apiHandler.HandleUser)
+
+		// Analytics Endpoints
+		mux.HandleFunc("/api/analytics/overview", apiHandler.HandleAnalyticsOverview)
+		mux.HandleFunc("/api/analytics/models", apiHandler.HandleAnalyticsModels)
+		mux.HandleFunc("/api/analytics/channels", apiHandler.HandleAnalyticsChannels)
+
+		// Request Log Endpoints
+		mux.HandleFunc("/api/logs", apiHandler.HandleLogs)
+		mux.HandleFunc("/api/logs/", apiHandler.HandleLog)
+
+		// Billing Endpoints
+		mux.HandleFunc("/api/billing", apiHandler.HandleBilling)
+		mux.HandleFunc("/api/billing/pricing", apiHandler.HandleBillingPricing)
+	}
+
 	// Diagnostics & Observability endpoints
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"UP","service":"nexusai-gateway","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))))
+	})
+
+	// Readiness probe — standard k8s naming (/ready)
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		dbStatus := "disconnected"
+		redisStatus := "disconnected"
+		isReady := true
+
+		// Check DB
+		if db != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := db.PingContext(ctx); err == nil {
+				dbStatus = "connected"
+			} else {
+				dbStatus = "degraded"
+				if !cfg.EnableSandboxFallback {
+					isReady = false
+				}
+			}
+		} else {
+			if !cfg.EnableSandboxFallback {
+				isReady = false
+			}
+		}
+
+		// Check Redis via quotaStorage
+		if quotaStorage != nil {
+			if err := quotaStorage.Ping(context.Background()); err == nil {
+				redisStatus = "connected"
+			} else {
+				redisStatus = "degraded"
+			}
+		}
+
+		statusStr := "ok"
+		statusCode := http.StatusOK
+		if !isReady {
+			statusStr = "not_ready"
+			statusCode = http.StatusServiceUnavailable
+		}
+
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			`{"status":"%s","service":"nexusai-gateway","database":"%s","redis":"%s","sandbox_fallback_active":%t,"timestamp":"%s"}`,
+			statusStr,
+			dbStatus,
+			redisStatus,
+			cfg.EnableSandboxFallback,
+			time.Now().UTC().Format(time.RFC3339),
+		)))
 	})
 
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -170,6 +313,9 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		fmt.Fprintf(w, "# HELP nexusai_gateway_uptime_seconds Uptime of the gateway in seconds.\n")
 		fmt.Fprintf(w, "# TYPE nexusai_gateway_uptime_seconds gauge\n")
 		fmt.Fprintf(w, "nexusai_gateway_uptime_seconds %.0f\n", time.Since(startTime).Seconds())
+
+		// Export Prometheus metrics using the observability handler
+		observability.PrometheusHandler().ServeHTTP(w, r)
 	})
 
 	// Single Page Application static server
@@ -179,7 +325,9 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	return WithRecovery(
 		WithCorrelationID(
 			WithStructuredLogging(
-				WithRateLimiting(mux),
+				WithRateLimiting(
+					rateLimitMiddleware.Middleware(mux),
+				),
 			),
 		),
 	)

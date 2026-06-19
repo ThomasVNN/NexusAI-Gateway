@@ -12,7 +12,10 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/config"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/db/postgres"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/gateway/http/router"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 )
+
+var startTime = time.Now()
 
 func main() {
 	// Configure global slog JSON logger as the standard logging facility
@@ -36,7 +39,20 @@ func main() {
 		slog.Bool("sandbox_fallback", cfg.EnableSandboxFallback),
 	)
 
-	// 2. Initialize PostgreSQL connection
+	// 2. Initialize observability (OpenTelemetry + Prometheus)
+	obsCtx, obsCancel := context.WithCancel(context.Background())
+	defer obsCancel()
+
+	if err := observability.Init(obsCtx, observability.Config{
+		ServiceName:    "nexusai-gateway",
+		ServiceVersion: "1.0.0",
+		OTLPEndpoint:   cfg.OTLPEndpoint,
+		Enabled:        cfg.ObservabilityEnabled,
+	}); err != nil {
+		slog.Warn("Observability initialization failed (continuing without)", slog.Any("error", err))
+	}
+
+	// 3. Initialize PostgreSQL connection
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer dbCancel()
 
@@ -48,7 +64,18 @@ func main() {
 		slog.Info("Connected to PostgreSQL successfully")
 	}
 
-	// 3. Setup HTTP router and routes
+	// Start background metrics updater
+	dbChecker := func() bool {
+		if db == nil {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		return db.PingContext(ctx) == nil
+	}
+	observability.StartObservability(obsCtx, startTime, dbChecker)
+
+	// 4. Setup HTTP router and routes
 	r := router.New(db, cfg)
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
