@@ -7,263 +7,241 @@ import (
 	"time"
 )
 
-func TestRetry_Success(t *testing.T) {
-	config := &RetryConfig{
-		MaxRetries: 3,
-		BaseDelay:  10 * time.Millisecond,
-		MaxDelay:   100 * time.Millisecond,
-		Jitter:     false,
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.MaxAttempts != 3 {
+		t.Errorf("Expected 3 max attempts, got %d", cfg.MaxAttempts)
 	}
 
-	ctx := context.Background()
+	if cfg.InitialDelay != 100*time.Millisecond {
+		t.Errorf("Expected 100ms initial delay, got %v", cfg.InitialDelay)
+	}
+
+	if cfg.BackoffFactor != 2.0 {
+		t.Errorf("Expected 2.0 backoff factor, got %f", cfg.BackoffFactor)
+	}
+}
+
+func TestDo_Success(t *testing.T) {
+	cfg := DefaultConfig()
 	callCount := 0
 
-	result, err := Retry(ctx, config, func(ctx context.Context) (interface{}, error) {
+	err := Do(context.Background(), cfg, func() error {
 		callCount++
-		return "success", nil
+		return nil
 	})
 
 	if err != nil {
-		t.Fatalf("Retry() error = %v", err)
-	}
-
-	if result != "success" {
-		t.Errorf("Retry() result = %v, want success", result)
+		t.Errorf("Expected no error, got %v", err)
 	}
 
 	if callCount != 1 {
-		t.Errorf("Retry() called function %d times, want 1", callCount)
+		t.Errorf("Expected 1 call, got %d", callCount)
 	}
 }
 
-func TestRetry_RetriesOnFailure(t *testing.T) {
-	config := &RetryConfig{
-		MaxRetries: 3,
-		BaseDelay:  10 * time.Millisecond,
-		MaxDelay:   100 * time.Millisecond,
-		Jitter:     false,
-	}
-
-	ctx := context.Background()
+func TestDo_RetryOnFailure(t *testing.T) {
+	cfg := DefaultConfig()
 	callCount := 0
 
-	result, err := Retry(ctx, config, func(ctx context.Context) (interface{}, error) {
+	err := Do(context.Background(), cfg, func() error {
 		callCount++
 		if callCount < 3 {
-			return nil, errors.New("temporary failure")
+			return errors.New("transient error")
 		}
-		return "success after retry", nil
+		return nil
 	})
 
 	if err != nil {
-		t.Fatalf("Retry() error = %v", err)
-	}
-
-	if result != "success after retry" {
-		t.Errorf("Retry() result = %v, want success after retry", result)
+		t.Errorf("Expected no error, got %v", err)
 	}
 
 	if callCount != 3 {
-		t.Errorf("Retry() called function %d times, want 3", callCount)
+		t.Errorf("Expected 3 calls, got %d", callCount)
 	}
 }
 
-func TestRetry_GivesUpAfterMaxRetries(t *testing.T) {
-	config := &RetryConfig{
-		MaxRetries: 2,
-		BaseDelay:  10 * time.Millisecond,
-		MaxDelay:   100 * time.Millisecond,
-		Jitter:     false,
-	}
-
-	ctx := context.Background()
+func TestDo_ExceedMaxAttempts(t *testing.T) {
+	cfg := DefaultConfig()
 	callCount := 0
 
-	_, err := Retry(ctx, config, func(ctx context.Context) (interface{}, error) {
+	err := Do(context.Background(), cfg, func() error {
 		callCount++
-		return nil, errors.New("persistent failure")
+		return errors.New("permanent error")
 	})
 
 	if err == nil {
-		t.Error("Expected error after max retries")
+		t.Error("Expected error")
 	}
 
-	if callCount != 3 { // 1 initial + 2 retries
-		t.Errorf("Retry() called function %d times, want 3", callCount)
-	}
-}
-
-func TestRetry_RespectsContextCancellation(t *testing.T) {
-	config := &RetryConfig{
-		MaxRetries: 10,
-		BaseDelay:  100 * time.Millisecond,
-		MaxDelay:   100 * time.Millisecond,
-		Jitter:     false,
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	callCount := 0
-
-	// Cancel after first call
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
-
-	_, err := Retry(ctx, config, func(ctx context.Context) (interface{}, error) {
-		callCount++
-		return nil, errors.New("failure")
-	})
-
-	if err != context.Canceled {
-		t.Errorf("Retry() error = %v, want context.Canceled", err)
+	if callCount != 3 {
+		t.Errorf("Expected 3 calls (max attempts), got %d", callCount)
 	}
 }
 
-func TestRetry_RespectsContextTimeout(t *testing.T) {
-	config := &RetryConfig{
-		MaxRetries: 10,
-		BaseDelay:  50 * time.Millisecond,
-		MaxDelay:   50 * time.Millisecond,
-		Jitter:     false,
-	}
+func TestDo_ContextCancellation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.InitialDelay = 100 * time.Millisecond
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
 	callCount := 0
 
-	_, err := Retry(ctx, config, func(ctx context.Context) (interface{}, error) {
+	err := Do(ctx, cfg, func() error {
 		callCount++
-		return nil, errors.New("failure")
+		return errors.New("error")
 	})
 
 	if err != context.DeadlineExceeded {
-		t.Errorf("Retry() error = %v, want context.DeadlineExceeded", err)
+		t.Errorf("Expected context.DeadlineExceeded, got %v", err)
+	}
+
+	// Should be limited by context timeout
+	if callCount > 1 {
+		t.Errorf("Expected 1 call due to context cancellation, got %d", callCount)
 	}
 }
 
-func TestCalculateDelay(t *testing.T) {
-	tests := []struct {
-		name      string
-		attempt   int
-		baseDelay time.Duration
-		maxDelay  time.Duration
-		jitter    bool
-		wantMin   time.Duration
-		wantMax   time.Duration
-	}{
-		{
-			name:      "Exponential backoff without jitter",
-			attempt:   2,
-			baseDelay: 100 * time.Millisecond,
-			maxDelay:  5 * time.Second,
-			jitter:    false,
-			wantMin:   400 * time.Millisecond, // 100ms * 2^2 = 400ms
-			wantMax:   400 * time.Millisecond,
-		},
-		{
-			name:      "Exponential backoff with jitter",
-			attempt:   2,
-			baseDelay: 100 * time.Millisecond,
-			maxDelay:  5 * time.Second,
-			jitter:    true,
-			wantMin:   400 * time.Millisecond,
-			wantMax:   500 * time.Millisecond, // 400ms + up to 25% jitter
-		},
-		{
-			name:      "Capped at max delay",
-			attempt:   10,
-			baseDelay: 100 * time.Millisecond,
-			maxDelay:  1 * time.Second,
-			jitter:    false,
-			wantMin:   1 * time.Second,
-			wantMax:   1 * time.Second,
-		},
+func TestDoWithResult_Success(t *testing.T) {
+	cfg := DefaultConfig()
+
+	result, err := DoWithResult(context.Background(), cfg, func() (interface{}, error) {
+		return "success", nil
+	})
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			config := &RetryConfig{
-				BaseDelay: tt.baseDelay,
-				MaxDelay:  tt.maxDelay,
-				Jitter:    tt.jitter,
-			}
-
-			delay := CalculateDelay(tt.attempt, config)
-
-			if delay < tt.wantMin {
-				t.Errorf("CalculateDelay() = %v, want >= %v", delay, tt.wantMin)
-			}
-			if delay > tt.wantMax {
-				t.Errorf("CalculateDelay() = %v, want <= %v", delay, tt.wantMax)
-			}
-		})
+	if result != "success" {
+		t.Errorf("Expected 'success', got '%v'", result)
 	}
 }
 
-func TestIsRetryable(t *testing.T) {
-	config := &RetryConfig{
-		RetryableCodes: []int{408, 429, 500, 502, 503, 504},
+func TestDoWithResult_RetryAndSucceed(t *testing.T) {
+	cfg := DefaultConfig()
+	callCount := 0
+
+	result, err := DoWithResult(context.Background(), cfg, func() (interface{}, error) {
+		callCount++
+		if callCount < 2 {
+			return nil, errors.New("retry error")
+		}
+		return "final result", nil
+	})
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
 	}
 
-	tests := []struct {
-		name       string
-		statusCode int
-		err        error
-		want       bool
-	}{
-		{"Retryable status code 429", 429, nil, true},
-		{"Retryable status code 503", 503, nil, true},
-		{"Non-retryable status code 404", 404, nil, false},
-		{"Error present - retryable", 0, errors.New("network error"), true},
-		{"No error and non-retryable status", 404, nil, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := config.IsRetryable(tt.statusCode, tt.err)
-			if got != tt.want {
-				t.Errorf("IsRetryable() = %v, want %v", got, tt.want)
-			}
-		})
+	if result != "final result" {
+		t.Errorf("Expected 'final result', got '%v'", result)
 	}
 }
 
-func TestDefaultRetryConfig(t *testing.T) {
-	config := DefaultRetryConfig()
+func TestRetryableError(t *testing.T) {
+	err := &RetryableError{Err: errors.New("test error")}
 
-	if config.MaxRetries != 3 {
-		t.Errorf("DefaultRetryConfig().MaxRetries = %d, want 3", config.MaxRetries)
+	if err.Error() != "test error" {
+		t.Errorf("Expected 'test error', got '%s'", err.Error())
 	}
 
-	if config.BaseDelay != 100*time.Millisecond {
-		t.Errorf("DefaultRetryConfig().BaseDelay = %v, want 100ms", config.BaseDelay)
-	}
-
-	if config.MaxDelay != 5*time.Second {
-		t.Errorf("DefaultRetryConfig().MaxDelay = %v, want 5s", config.MaxDelay)
-	}
-
-	if !config.Jitter {
-		t.Error("DefaultRetryConfig().Jitter should be true")
-	}
-
-	expectedCodes := []int{408, 429, 500, 502, 503, 504}
-	if len(config.RetryableCodes) != len(expectedCodes) {
-		t.Errorf("DefaultRetryConfig().RetryableCodes length = %d, want %d", len(config.RetryableCodes), len(expectedCodes))
+	// Just verify Unwrap returns something
+	unwrapped := err.Unwrap()
+	if unwrapped == nil {
+		t.Error("Expected Unwrap to return non-nil")
 	}
 }
 
-func TestCircuitBreakerError(t *testing.T) {
-	err := ErrCircuitOpen
+func TestStrategy(t *testing.T) {
+	cfg := DefaultConfig()
+	strategy := NewStrategy(cfg)
 
-	if err.Error() != "circuit breaker is open" {
-		t.Errorf("CircuitBreakerError.Error() = %v, want 'circuit breaker is open'", err.Error())
+	callCount := 0
+
+	err := strategy.Execute(context.Background(), func() error {
+		callCount++
+		return nil
+	})
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
 	}
 
-	customErr := &CircuitBreakerError{Message: "custom message"}
-	if customErr.Error() != "custom message" {
-		t.Errorf("Custom CircuitBreakerError.Error() = %v, want 'custom message'", customErr.Error())
+	if callCount != 1 {
+		t.Errorf("Expected 1 call, got %d", callCount)
+	}
+}
+
+func TestAttemptRecorder(t *testing.T) {
+	recorder := NewAttemptRecorder()
+
+	recorder.Record(1, 100*time.Millisecond, errors.New("error 1"))
+	recorder.Record(2, 200*time.Millisecond, nil)
+
+	attempts := recorder.GetAttempts()
+
+	if len(attempts) != 2 {
+		t.Errorf("Expected 2 attempts, got %d", len(attempts))
+	}
+
+	if attempts[0].Attempt != 1 {
+		t.Errorf("Expected attempt 1, got %d", attempts[0].Attempt)
+	}
+
+	if attempts[0].Error.Error() != "error 1" {
+		t.Errorf("Expected 'error 1', got '%s'", attempts[0].Error.Error())
+	}
+}
+
+func TestAttemptRecorder_Reset(t *testing.T) {
+	recorder := NewAttemptRecorder()
+
+	recorder.Record(1, 100*time.Millisecond, nil)
+	recorder.Record(2, 200*time.Millisecond, nil)
+
+	recorder.Reset()
+
+	attempts := recorder.GetAttempts()
+	if len(attempts) != 0 {
+		t.Errorf("Expected 0 attempts after reset, got %d", len(attempts))
+	}
+}
+
+func TestCustomRetryable(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Retryable = func(err error) bool {
+		return err.Error() == "retryable"
+	}
+
+	// Should retry
+	err := Do(context.Background(), cfg, func() error {
+		return errors.New("retryable")
+	})
+
+	if err == nil {
+		t.Error("Expected error for retryable")
+	}
+
+	// Should not retry (non-retryable)
+	cfg2 := DefaultConfig()
+	cfg2.Retryable = func(err error) bool {
+		return err.Error() == "retryable"
+	}
+
+	callCount := 0
+	err2 := Do(context.Background(), cfg2, func() error {
+		callCount++
+		return errors.New("non-retryable")
+	})
+
+	if err2 == nil {
+		t.Error("Expected error for non-retryable")
+	}
+
+	if callCount != 1 {
+		t.Errorf("Expected 1 call (no retry for non-retryable), got %d", callCount)
 	}
 }

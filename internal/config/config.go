@@ -2,248 +2,206 @@ package config
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// Config holds all environmental configurations for the application
+// Config represents the application configuration
 type Config struct {
-	Port                  string
-	PostgresURL           string
-	RedisURL              string
-	JWKSPrivate           string
-	OIDCIssuer            string
-	InitialPassword       string
-	AppEnv                string // local, development, staging, production
-	UpstreamAPIURL        string
-	UpstreamAPIKey        string
-	EnableSandboxFallback bool
-	CORSAllowedOrigins    []string
-	// Observability configuration
-	ObservabilityEnabled bool
-	OTLPEndpoint         string
-	// New-API Features
-	EnableRetry        bool
-	MaxRetryCount      int
-	RetryBaseDelayMS   int
-	EnableCache        bool
-	CacheTTLSeconds    int
-	EnableRateLimit    bool
-	RateLimitPerMinute int
-	EnableBilling      bool
-	DefaultCurrency    string
+	Server   ServerConfig
+	Database DatabaseConfig
+	Redis    RedisConfig
+	API      APIConfig
+	Logging  LoggingConfig
 }
 
-// UnsafeDefaults contains known unsafe default values for detection
-var UnsafeDefaults = []string{
-	"postgres_secure_pass",
-	"admin",
-	"mock-key-for-local-dev",
-	"change-me-before-production",
-	"password",
-	"secret",
+// ServerConfig contains server configuration
+type ServerConfig struct {
+	Host            string
+	Port            int
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	IdleTimeout     time.Duration
+	ShutdownTimeout time.Duration
 }
 
-// Load reads all configurations from environment variables and sets defaults
-func Load() *Config {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "20129"
-	}
-
-	// SECURITY: No default password - must be provided via environment variable
-	initialPassword := os.Getenv("INITIAL_PASSWORD")
-	if initialPassword == "" {
-		initialPassword = os.Getenv("OMNIROUTE_ADMIN_KEY")
-	}
-	// Note: Password validation happens in Validate() for production environments
-
-	appEnv := strings.ToLower(os.Getenv("APP_ENV"))
-	if appEnv == "" {
-		appEnv = "development"
-	}
-
-	// SECURITY: Only load database URL from env - no hardcoded credentials
-	postgresURL := os.Getenv("DATABASE_URL")
-
-	redisURL := os.Getenv("REDIS_URL")
-
-	oidcIssuer := os.Getenv("OIDC_ISSUER")
-	if oidcIssuer == "" {
-		oidcIssuer = "http://localhost:20129"
-	}
-
-	upstreamAPIURL := os.Getenv("UPSTREAM_API_URL")
-	upstreamAPIKey := os.Getenv("UPSTREAM_API_KEY")
-
-	// Enable sandbox fallback for local/development environments when DB is unavailable
-	enableSandboxFallback := os.Getenv("ENABLE_SANDBOX_FALLBACK") == "true"
-	// Also enable in development environment by default
-	if appEnv == "development" || appEnv == "local" {
-		enableSandboxFallback = true
-	}
-
-	// CORS allowed origins - comma-separated list
-	corsOriginsEnv := os.Getenv("CORS_ALLOWED_ORIGINS")
-	var corsOrigins []string
-	if corsOriginsEnv != "" {
-		for _, origin := range strings.Split(corsOriginsEnv, ",") {
-			origin = strings.TrimSpace(origin)
-			if origin != "" {
-				corsOrigins = append(corsOrigins, origin)
-			}
-		}
-	}
-
-	// Observability configuration
-	observabilityEnabled := os.Getenv("OBSERVABILITY_ENABLED") == "true"
-	// Enable by default in production/staging
-	if appEnv == "production" || appEnv == "staging" {
-		observabilityEnabled = true
-	}
-	otlpEndpoint := os.Getenv("OTLP_ENDPOINT")
-
-	// New-API feature configuration
-	enableRetry := os.Getenv("ENABLE_RETRY") != "false" // Default enabled
-	maxRetryCount, _ := strconv.Atoi(os.Getenv("MAX_RETRY_COUNT"))
-	if maxRetryCount == 0 {
-		maxRetryCount = 3
-	}
-	retryBaseDelayMS, _ := strconv.Atoi(os.Getenv("RETRY_BASE_DELAY_MS"))
-	if retryBaseDelayMS == 0 {
-		retryBaseDelayMS = 100
-	}
-
-	enableCache := os.Getenv("ENABLE_CACHE") == "true"
-	cacheTTLSeconds, _ := strconv.Atoi(os.Getenv("CACHE_TTL_SECONDS"))
-	if cacheTTLSeconds == 0 {
-		cacheTTLSeconds = 300 // 5 minutes
-	}
-
-	enableRateLimit := os.Getenv("ENABLE_RATE_LIMIT") != "false" // Default enabled
-	rateLimitPerMinute, _ := strconv.Atoi(os.Getenv("RATE_LIMIT_PER_MINUTE"))
-	if rateLimitPerMinute == 0 {
-		rateLimitPerMinute = 60
-	}
-
-	enableBilling := os.Getenv("ENABLE_BILLING") == "true"
-	defaultCurrency := os.Getenv("DEFAULT_CURRENCY")
-	if defaultCurrency == "" {
-		defaultCurrency = "USD"
-	}
-
-	return &Config{
-		Port:                  port,
-		PostgresURL:           postgresURL,
-		RedisURL:              redisURL,
-		OIDCIssuer:            oidcIssuer,
-		InitialPassword:       initialPassword,
-		AppEnv:                appEnv,
-		UpstreamAPIURL:        upstreamAPIURL,
-		UpstreamAPIKey:        upstreamAPIKey,
-		EnableSandboxFallback: enableSandboxFallback,
-		CORSAllowedOrigins:    corsOrigins,
-		ObservabilityEnabled:  observabilityEnabled,
-		OTLPEndpoint:          otlpEndpoint,
-		EnableRetry:           enableRetry,
-		MaxRetryCount:         maxRetryCount,
-		RetryBaseDelayMS:      retryBaseDelayMS,
-		EnableCache:           enableCache,
-		CacheTTLSeconds:       cacheTTLSeconds,
-		EnableRateLimit:       enableRateLimit,
-		RateLimitPerMinute:    rateLimitPerMinute,
-		EnableBilling:         enableBilling,
-		DefaultCurrency:       defaultCurrency,
-	}
+// DatabaseConfig contains database configuration
+type DatabaseConfig struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Database string
+	MaxConns int
 }
 
-// Validate ensures there are no unsafe defaults in production and all values are safe
+// RedisConfig contains Redis configuration
+type RedisConfig struct {
+	Host     string
+	Port     int
+	Password string
+	DB       int
+	PoolSize int
+}
+
+// APIConfig contains API configuration
+type APIConfig struct {
+	Key            string
+	RateLimit      int
+	Timeout        time.Duration
+	AllowedOrigins []string
+}
+
+// LoggingConfig contains logging configuration
+type LoggingConfig struct {
+	Level  string
+	Format string
+}
+
+// Load loads configuration from environment variables
+func Load() (*Config, error) {
+	cfg := &Config{
+		Server: ServerConfig{
+			Host:            getEnv("SERVER_HOST", "0.0.0.0"),
+			Port:            getEnvInt("SERVER_PORT", 8080),
+			ReadTimeout:     getEnvDuration("SERVER_READ_TIMEOUT", 30*time.Second),
+			WriteTimeout:    getEnvDuration("SERVER_WRITE_TIMEOUT", 30*time.Second),
+			IdleTimeout:     getEnvDuration("SERVER_IDLE_TIMEOUT", 60*time.Second),
+			ShutdownTimeout: getEnvDuration("SERVER_SHUTDOWN_TIMEOUT", 30*time.Second),
+		},
+		Database: DatabaseConfig{
+			Host:     getEnv("DB_HOST", "localhost"),
+			Port:     getEnvInt("DB_PORT", 5432),
+			User:     getEnv("DB_USER", "postgres"),
+			Password: getEnv("DB_PASSWORD", ""),
+			Database: getEnv("DB_NAME", "nexusai"),
+			MaxConns: getEnvInt("DB_MAX_CONNS", 25),
+		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnvInt("REDIS_PORT", 6379),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvInt("REDIS_DB", 0),
+			PoolSize: getEnvInt("REDIS_POOL_SIZE", 10),
+		},
+		API: APIConfig{
+			Key:            getEnv("API_KEY", ""),
+			RateLimit:      getEnvInt("API_RATE_LIMIT", 100),
+			Timeout:        getEnvDuration("API_TIMEOUT", 60*time.Second),
+			AllowedOrigins: getEnvSlice("API_ALLOWED_ORIGINS", ","),
+		},
+		Logging: LoggingConfig{
+			Level:  getEnv("LOG_LEVEL", "info"),
+			Format: getEnv("LOG_FORMAT", "json"),
+		},
+	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// Validate validates the configuration
 func (c *Config) Validate() error {
-	// Validate AppEnv value
-	switch c.AppEnv {
-	case "local", "development", "staging", "production":
-		// OK
-	default:
-		return fmt.Errorf("invalid APP_ENV: %q. Must be one of: local, development, staging, production", c.AppEnv)
+	var errors []string
+
+	// Validate server config
+	if c.Server.Port < 1 || c.Server.Port > 65535 {
+		errors = append(errors, "Server port must be between 1 and 65535")
+	}
+	if c.Server.ReadTimeout < 0 {
+		errors = append(errors, "Server read timeout must be non-negative")
+	}
+	if c.Server.WriteTimeout < 0 {
+		errors = append(errors, "Server write timeout must be non-negative")
 	}
 
-	// Validate Port format
-	portNum, err := strconv.Atoi(c.Port)
-	if err != nil || portNum <= 0 || portNum > 65535 {
-		return fmt.Errorf("invalid PORT: %q. Must be a valid port number (1-65535)", c.Port)
+	// Validate database config
+	if c.Database.Host == "" {
+		errors = append(errors, "Database host is required")
+	}
+	if c.Database.Port < 1 || c.Database.Port > 65535 {
+		errors = append(errors, "Database port must be between 1 and 65535")
+	}
+	if c.Database.MaxConns < 1 {
+		errors = append(errors, "Database max connections must be at least 1")
 	}
 
-	// In production or staging, enforce strict checks
-	if c.AppEnv == "production" || c.AppEnv == "staging" {
-		// SECURITY: No fallback administrative password allowed - must be provided
-		if c.InitialPassword == "" {
-			return fmt.Errorf("administrative password (INITIAL_PASSWORD) is required in %s environment", c.AppEnv)
-		}
+	// Validate Redis config
+	if c.Redis.Host == "" {
+		errors = append(errors, "Redis host is required")
+	}
+	if c.Redis.Port < 1 || c.Redis.Port > 65535 {
+		errors = append(errors, "Redis port must be between 1 and 65535")
+	}
 
-		// Check against known unsafe defaults
-		for _, unsafe := range UnsafeDefaults {
-			if c.InitialPassword == unsafe {
-				return fmt.Errorf("unsafe default administrative password (INITIAL_PASSWORD) is not allowed in %s environment", c.AppEnv)
-			}
-		}
+	// Validate API config
+	if c.API.Timeout < 0 {
+		errors = append(errors, "API timeout must be non-negative")
+	}
 
-		if c.PostgresURL == "" {
-			return fmt.Errorf("PostgreSQL database URL (DATABASE_URL) is required in %s environment", c.AppEnv)
-		}
+	// Validate logging config
+	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLevels[c.Logging.Level] {
+		errors = append(errors, "Log level must be one of: debug, info, warn, error")
+	}
+	validFormats := map[string]bool{"json": true, "text": true}
+	if !validFormats[c.Logging.Format] {
+		errors = append(errors, "Log format must be one of: json, text")
+	}
 
-		// Ensure we don't use default localhost or default hostnames in staging/production
-		u, err := url.Parse(c.PostgresURL)
-		if err != nil {
-			return fmt.Errorf("failed to parse DATABASE_URL: %w", err)
-		}
-		if u.Host == "localhost:5432" || u.Host == "127.0.0.1:5432" {
-			return fmt.Errorf("unsafe default host in DATABASE_URL for %s environment", c.AppEnv)
-		}
-
-		// Check for unsafe password in database URL
-		if u.User != nil {
-			pwd, set := u.User.Password()
-			if set {
-				for _, unsafe := range UnsafeDefaults {
-					if pwd == unsafe {
-						return fmt.Errorf("unsafe default credential in DATABASE_URL for %s environment", c.AppEnv)
-					}
-				}
-			}
-		}
-
-		// Redis URL validation
-		if c.RedisURL != "" {
-			ru, err := url.Parse(c.RedisURL)
-			if err == nil {
-				if ru.Host == "localhost:6379" || ru.Host == "127.0.0.1:6379" {
-					return fmt.Errorf("unsafe default host in REDIS_URL for %s environment", c.AppEnv)
-				}
-			}
-		}
+	if len(errors) > 0 {
+		return fmt.Errorf("configuration validation failed: %s", strings.Join(errors, "; "))
 	}
 
 	return nil
 }
 
-// GetEnvironment returns the current environment without exposing internal state
-func (c *Config) GetEnvironment() string {
-	return c.AppEnv
+// GetEnv gets an environment variable or returns a default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
-// IsProduction returns true if running in production environment
-func (c *Config) IsProduction() bool {
-	return c.AppEnv == "production"
-}
-
-// ValidateNoUnsafeDefaults checks if a value matches any known unsafe default
-func ValidateNoUnsafeDefaults(value string) bool {
-	for _, unsafe := range UnsafeDefaults {
-		if value == unsafe {
-			return false
+// GetEnvInt gets an environment variable as an integer or returns a default value
+func getEnvInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
 		}
 	}
-	return true
+	return defaultValue
+}
+
+// GetEnvDuration gets an environment variable as a duration or returns a default value
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	return defaultValue
+}
+
+// GetEnvSlice gets an environment variable as a slice or returns a default value
+func getEnvSlice(key, separator string) []string {
+	if value := os.Getenv(key); value != "" {
+		return strings.Split(value, separator)
+	}
+	return []string{}
+}
+
+// String returns a string representation of the config
+func (c *Config) String() string {
+	return fmt.Sprintf("Config{Server:%s:%d, Database:%s:%d, Redis:%s:%d}",
+		c.Server.Host, c.Server.Port,
+		c.Database.Host, c.Database.Port,
+		c.Redis.Host, c.Redis.Port)
 }

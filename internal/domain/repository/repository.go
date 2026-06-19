@@ -6,6 +6,18 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/domain/model"
 )
 
+// Authenticator defines the interface for authentication
+type Authenticator interface {
+	Authenticate(ctx context.Context, token string) (*UserIdentity, error)
+}
+
+// UserIdentity represents an authenticated user
+type UserIdentity struct {
+	ID       string
+	TenantID string
+	Roles    []string
+}
+
 // KeyRepository handles storage interactions for API Keys
 type KeyRepository interface {
 	GetByID(ctx context.Context, id string) (*model.RegisteredKey, error)

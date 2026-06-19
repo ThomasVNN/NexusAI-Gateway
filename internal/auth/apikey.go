@@ -60,7 +60,7 @@ func (a *APIKeyAuthenticator) AddTestKey(testKey string) {
 }
 
 // Authenticate verifies the token and returns the user identity
-func (a *APIKeyAuthenticator) Authenticate(ctx context.Context, token string) (*UserIdentity, error) {
+func (a *APIKeyAuthenticator) Authenticate(ctx context.Context, token string) (*repository.UserIdentity, error) {
 	rawKey, err := ParseKey(token)
 	if err != nil {
 		return nil, fmt.Errorf("malformed or missing key: %w", err)
@@ -71,7 +71,7 @@ func (a *APIKeyAuthenticator) Authenticate(ctx context.Context, token string) (*
 	// SECURITY: Check allowlist first (only for explicitly approved test keys)
 	if len(a.TestKeys) > 0 {
 		if a.TestKeys[keyHash] {
-			return &UserIdentity{
+			return &repository.UserIdentity{
 				ID:       "test-key",
 				TenantID: "test-tenant",
 				Roles:    []string{"test"},
@@ -101,7 +101,7 @@ func (a *APIKeyAuthenticator) Authenticate(ctx context.Context, token string) (*
 		tenantID = "default-tenant"
 	}
 
-	return &UserIdentity{
+	return &repository.UserIdentity{
 		ID:       key.ID,
 		TenantID: tenantID,
 	}, nil

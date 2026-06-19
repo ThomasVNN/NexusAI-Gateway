@@ -194,8 +194,81 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 
 		// Billing Endpoints
 		mux.HandleFunc("/api/billing", apiHandler.HandleBilling)
-		mux.HandleFunc("/api/billing/pricing", apiHandler.HandleBillingPricing)
 	}
+
+	// Cost Tracking Endpoints (REC-P1-3)
+	costHandler := handler.NewCostHandler()
+	mux.HandleFunc("/api/billing/summary", costHandler.GetCostSummary)
+	mux.HandleFunc("/api/billing/pricing", costHandler.GetModelPricing)
+	mux.HandleFunc("/api/billing/free-tier", costHandler.GetFreeTierUsage)
+
+	// Token Compression Endpoints (REC-P2-1)
+	mux.HandleFunc("/api/v1/compression/config", costHandler.GetCompressionConfig)
+	mux.HandleFunc("/api/v1/compression/config/set", costHandler.SetCompressionConfig)
+	mux.HandleFunc("/api/v1/compression/stats", costHandler.GetCompressionStats)
+	mux.HandleFunc("/api/v1/compression/methods", costHandler.GetCompressionMethods)
+
+	// Routing Strategies Endpoints (REC-P1-4)
+	routingHandler := handler.NewRoutingHandler()
+	mux.HandleFunc("/api/v1/strategies", routingHandler.GetStrategies)
+	mux.HandleFunc("/api/v1/routes", routingHandler.GetRoutes)
+	mux.HandleFunc("/api/v1/routes/create", routingHandler.CreateRoute)
+	mux.HandleFunc("/api/v1/routes/update", routingHandler.UpdateRoute)
+	mux.HandleFunc("/api/v1/routes/delete", routingHandler.DeleteRoute)
+
+	// Auto-Combo Engine Endpoints (REC-P1-5)
+	mux.HandleFunc("/api/v1/combos", routingHandler.GetCombos)
+	mux.HandleFunc("/api/v1/combos/create", routingHandler.CreateCombo)
+	mux.HandleFunc("/api/v1/combos/update", routingHandler.UpdateCombo)
+	mux.HandleFunc("/api/v1/combos/delete", routingHandler.DeleteCombo)
+	mux.HandleFunc("/api/v1/combos/score", routingHandler.ScoreModels)
+	mux.HandleFunc("/api/v1/combos/fallback-tiers", routingHandler.GetFallbackTiers)
+	mux.HandleFunc("/api/v1/combos/config", routingHandler.GetComboConfig)
+	mux.HandleFunc("/api/v1/combos/config/set", routingHandler.SetComboConfig)
+
+	// Proxy Management Endpoints (REC-P3-1)
+	proxyHandler := handler.NewProxyHandler()
+	mux.HandleFunc("/api/v1/proxies", proxyHandler.ListProxies)
+	mux.HandleFunc("/api/v1/proxies/create", proxyHandler.CreateProxy)
+	mux.HandleFunc("/api/v1/proxies/update", proxyHandler.UpdateProxy)
+	mux.HandleFunc("/api/v1/proxies/delete", proxyHandler.DeleteProxy)
+	mux.HandleFunc("/api/v1/proxies/enable", proxyHandler.EnableProxy)
+	mux.HandleFunc("/api/v1/proxies/disable", proxyHandler.DisableProxy)
+	mux.HandleFunc("/api/v1/proxies/test", proxyHandler.TestProxy)
+	mux.HandleFunc("/api/v1/proxies/health", proxyHandler.GetPoolHealth)
+	mux.HandleFunc("/api/v1/proxies/rotate", proxyHandler.RotateProxy)
+	mux.HandleFunc("/api/v1/proxies/tls-stealth", proxyHandler.GetTLSConfig)
+	mux.HandleFunc("/api/v1/proxies/tls-stealth/set", proxyHandler.SetTLSConfig)
+	mux.HandleFunc("/api/v1/proxies/{id}", proxyHandler.GetProxy)
+	mux.HandleFunc("/api/v1/proxy-chains", proxyHandler.ListChains)
+	mux.HandleFunc("/api/v1/proxy-chains/create", proxyHandler.CreateChain)
+	mux.HandleFunc("/api/v1/proxy-chains/delete", proxyHandler.DeleteChain)
+	mux.HandleFunc("/api/v1/proxy-chains/{id}", proxyHandler.GetChain)
+
+	// Provider Management Endpoints (REC-P3-2)
+	providerHandler := handler.NewProviderHandler()
+	mux.HandleFunc("/api/v1/providers", providerHandler.ListProviders)
+	mux.HandleFunc("/api/v1/providers/stats", providerHandler.GetStats)
+	mux.HandleFunc("/api/v1/providers/free", providerHandler.GetFreeProviders)
+	mux.HandleFunc("/api/v1/providers/{id}", providerHandler.GetProvider)
+	mux.HandleFunc("/api/v1/providers/{id}/enable", providerHandler.EnableProvider)
+	mux.HandleFunc("/api/v1/providers/{id}/disable", providerHandler.DisableProvider)
+
+	// Model Registry Endpoints
+	mux.HandleFunc("/api/v1/models", providerHandler.ListModels)
+	mux.HandleFunc("/api/v1/models/{id}", providerHandler.GetModel)
+
+	// Circuit Breaker Endpoints (REC-CB-1)
+	cbHandler := handler.NewCircuitBreakerHandler()
+	mux.HandleFunc("/api/v1/circuit-breakers", cbHandler.ListBreakers)
+	mux.HandleFunc("/api/v1/circuit-breakers/reset-all", cbHandler.ResetAllBreakers)
+	mux.HandleFunc("/api/v1/circuit-breakers/{provider}", cbHandler.GetBreaker)
+	mux.HandleFunc("/api/v1/circuit-breakers/{provider}/state", cbHandler.GetBreakerState)
+	mux.HandleFunc("/api/v1/circuit-breakers/{provider}/reset", cbHandler.ResetBreaker)
+	mux.HandleFunc("/api/v1/circuit-breakers/{provider}/check", cbHandler.CheckBreaker)
+	mux.HandleFunc("/api/v1/circuit-breakers/{provider}/success", cbHandler.RecordSuccess)
+	mux.HandleFunc("/api/v1/circuit-breakers/{provider}/failure", cbHandler.RecordFailure)
+	mux.HandleFunc("/api/v1/circuit-breakers/{provider}/timeout", cbHandler.RecordTimeout)
 
 	// Diagnostics & Observability endpoints
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
