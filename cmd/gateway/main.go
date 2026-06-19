@@ -46,7 +46,7 @@ func main() {
 	if err := observability.Init(obsCtx, observability.Config{
 		ServiceName:    "nexusai-gateway",
 		ServiceVersion: "1.0.0",
-		OTLPEndpoint:  cfg.OTLPEndpoint,
+		OTLPEndpoint:   cfg.OTLPEndpoint,
 		Enabled:        cfg.ObservabilityEnabled,
 	}); err != nil {
 		slog.Warn("Observability initialization failed (continuing without)", slog.Any("error", err))

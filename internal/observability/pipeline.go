@@ -14,28 +14,28 @@ import (
 type Metrics struct {
 	mu sync.RWMutex
 	// Request metrics
-	TotalRequests      int64
-	SuccessRequests    int64
-	ErrorRequests       int64
-	PendingRequests     int64
-	
+	TotalRequests   int64
+	SuccessRequests int64
+	ErrorRequests   int64
+	PendingRequests int64
+
 	// Latency metrics (in milliseconds)
-	MinLatency         int64
-	MaxLatency         int64
-	TotalLatency       int64
-	LatencyCount       int64
-	
+	MinLatency   int64
+	MaxLatency   int64
+	TotalLatency int64
+	LatencyCount int64
+
 	// Model metrics
-	ModelRequests      map[string]int64
-	ModelTokens        map[string]int64
-	ModelErrors        map[string]int64
-	
+	ModelRequests map[string]int64
+	ModelTokens   map[string]int64
+	ModelErrors   map[string]int64
+
 	// Tenant metrics
-	TenantRequests     map[string]int64
-	
+	TenantRequests map[string]int64
+
 	// System metrics
-	StartTime          time.Time
-	Uptime             time.Duration
+	StartTime time.Time
+	Uptime    time.Duration
 }
 
 // GlobalMetrics is the global metrics instance
@@ -50,17 +50,17 @@ var GlobalMetrics = &Metrics{
 // RecordRequest records a request
 func (m *Metrics) RecordRequest(tenantID, modelID string, success bool, latencyMs int64) {
 	atomic.AddInt64(&m.TotalRequests, 1)
-	
+
 	if success {
 		atomic.AddInt64(&m.SuccessRequests, 1)
 	} else {
 		atomic.AddInt64(&m.ErrorRequests, 1)
 	}
-	
+
 	// Update latency stats
 	atomic.AddInt64(&m.LatencyCount, 1)
 	atomic.AddInt64(&m.TotalLatency, latencyMs)
-	
+
 	for {
 		min := atomic.LoadInt64(&m.MinLatency)
 		if latencyMs < min || min == 0 {
@@ -68,7 +68,7 @@ func (m *Metrics) RecordRequest(tenantID, modelID string, success bool, latencyM
 		}
 		break
 	}
-	
+
 	for {
 		max := atomic.LoadInt64(&m.MaxLatency)
 		if latencyMs > max {
@@ -76,7 +76,7 @@ func (m *Metrics) RecordRequest(tenantID, modelID string, success bool, latencyM
 		}
 		break
 	}
-	
+
 	// Update model metrics
 	if modelID != "" {
 		m.mu.Lock()
@@ -88,7 +88,7 @@ func (m *Metrics) RecordRequest(tenantID, modelID string, success bool, latencyM
 		}
 		m.mu.Unlock()
 	}
-	
+
 	// Update tenant metrics
 	if tenantID != "" {
 		m.mu.Lock()
@@ -101,31 +101,33 @@ func (m *Metrics) RecordRequest(tenantID, modelID string, success bool, latencyM
 func (m *Metrics) GetMetrics() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	total := atomic.LoadInt64(&m.TotalRequests)
 	success := atomic.LoadInt64(&m.SuccessRequests)
 	errors := atomic.LoadInt64(&m.ErrorRequests)
 	count := atomic.LoadInt64(&m.LatencyCount)
 	totalLatency := atomic.LoadInt64(&m.TotalLatency)
-	
+
 	var avgLatency float64
 	if count > 0 {
 		avgLatency = float64(totalLatency) / float64(count)
 	}
-	
+
 	// Calculate uptime
 	uptime := time.Since(m.StartTime)
-	
+
 	return map[string]interface{}{
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"timestamp":      time.Now().UTC().Format(time.RFC3339),
 		"uptime_seconds": uptime.Seconds(),
 		"requests": map[string]interface{}{
-			"total":     total,
-			"success":   success,
-			"errors":    errors,
-			"pending":   atomic.LoadInt64(&m.PendingRequests),
+			"total":   total,
+			"success": success,
+			"errors":  errors,
+			"pending": atomic.LoadInt64(&m.PendingRequests),
 			"success_rate": func() float64 {
-				if total == 0 { return 0 }
+				if total == 0 {
+					return 0
+				}
 				return float64(success) / float64(total) * 100
 			}(),
 		},
@@ -135,7 +137,7 @@ func (m *Metrics) GetMetrics() map[string]interface{} {
 			"avg":   avgLatency,
 			"count": count,
 		},
-		"models": m.ModelRequests,
+		"models":  m.ModelRequests,
 		"tenants": m.TenantRequests,
 	}
 }
@@ -172,30 +174,30 @@ func RegisterHealthCheck(check HealthChecker) {
 func PerformHealthCheck() Health {
 	checks := make(map[string]HealthCheck)
 	allHealthy := true
-	
+
 	for _, check := range GlobalHealthChecks {
 		start := time.Now()
 		healthy, msg := check.Check()
 		latency := time.Since(start)
-		
+
 		status := "healthy"
 		if !healthy {
 			status = "unhealthy"
 			allHealthy = false
 		}
-		
+
 		checks[check.Name()] = HealthCheck{
 			Status:  status,
 			Message: msg,
 			Latency: latency.String(),
 		}
 	}
-	
+
 	status := "healthy"
 	if !allHealthy {
 		status = "degraded"
 	}
-	
+
 	return Health{
 		Status:    status,
 		Timestamp: time.Now(),
@@ -235,9 +237,9 @@ func NewTraceCollector(maxTraces int) *TraceCollector {
 func (c *TraceCollector) AddTrace(trace TracingContext) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	c.traces = append(c.traces, trace)
-	
+
 	// Trim if over capacity
 	if len(c.traces) > c.max {
 		c.traces = c.traces[len(c.traces)-c.max:]
@@ -248,11 +250,11 @@ func (c *TraceCollector) AddTrace(trace TracingContext) {
 func (c *TraceCollector) GetTraces(limit int) []TracingContext {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	if limit <= 0 || limit > len(c.traces) {
 		limit = len(c.traces)
 	}
-	
+
 	result := make([]TracingContext, limit)
 	copy(result, c.traces[len(c.traces)-limit:])
 	return result
@@ -263,25 +265,25 @@ var GlobalTraceCollector = NewTraceCollector(1000)
 
 // LogEntry represents a structured log entry
 type LogEntry struct {
-	Timestamp   time.Time         `json:"timestamp"`
-	Level       string            `json:"level"`
-	Message     string            `json:"message"`
-	TraceID     string            `json:"trace_id,omitempty"`
-	SpanID      string            `json:"span_id,omitempty"`
-	TenantID    string            `json:"tenant_id,omitempty"`
-	Service     string            `json:"service"`
-	Version     string            `json:"version"`
-	Duration    string            `json:"duration,omitempty"`
-	StatusCode  int               `json:"status_code,omitempty"`
-	Attributes  map[string]string `json:"attributes,omitempty"`
-	Error       string            `json:"error,omitempty"`
+	Timestamp  time.Time         `json:"timestamp"`
+	Level      string            `json:"level"`
+	Message    string            `json:"message"`
+	TraceID    string            `json:"trace_id,omitempty"`
+	SpanID     string            `json:"span_id,omitempty"`
+	TenantID   string            `json:"tenant_id,omitempty"`
+	Service    string            `json:"service"`
+	Version    string            `json:"version"`
+	Duration   string            `json:"duration,omitempty"`
+	StatusCode int               `json:"status_code,omitempty"`
+	Attributes map[string]string `json:"attributes,omitempty"`
+	Error      string            `json:"error,omitempty"`
 }
 
 // LogCollector collects structured logs
 type LogCollector struct {
-	mu     sync.RWMutex
-	logs   []LogEntry
-	max    int
+	mu   sync.RWMutex
+	logs []LogEntry
+	max  int
 }
 
 // NewLogCollector creates a new log collector
@@ -299,10 +301,10 @@ func NewLogCollector(maxLogs int) *LogCollector {
 func (c *LogCollector) AddLog(entry LogEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	entry.Timestamp = time.Now()
 	c.logs = append(c.logs, entry)
-	
+
 	// Trim if over capacity
 	if len(c.logs) > c.max {
 		c.logs = c.logs[len(c.logs)-c.max:]
@@ -313,7 +315,7 @@ func (c *LogCollector) AddLog(entry LogEntry) {
 func (c *LogCollector) GetLogs(limit int, level string) []LogEntry {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	var result []LogEntry
 	for i := len(c.logs) - 1; i >= 0; i-- {
 		if level == "" || c.logs[i].Level == level {
@@ -340,7 +342,7 @@ func NewObservabilityHandler() *ObservabilityHandler {
 // HandleMetrics returns metrics endpoint
 func (h *ObservabilityHandler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	metrics := GlobalMetrics.GetMetrics()
 	_ = json.NewEncoder(w).Encode(metrics)
 }
@@ -348,14 +350,14 @@ func (h *ObservabilityHandler) HandleMetrics(w http.ResponseWriter, r *http.Requ
 // HandleHealth returns health check endpoint
 func (h *ObservabilityHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	health := PerformHealthCheck()
-	
+
 	statusCode := http.StatusOK
 	if health.Status != "healthy" {
 		statusCode = http.StatusServiceUnavailable
 	}
-	
+
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(health)
 }
@@ -363,10 +365,10 @@ func (h *ObservabilityHandler) HandleHealth(w http.ResponseWriter, r *http.Reque
 // HandleTraces returns trace endpoint
 func (h *ObservabilityHandler) HandleTraces(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	limit := 100
 	traces := GlobalTraceCollector.GetTraces(limit)
-	
+
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"traces": traces,
 		"count":  len(traces),
@@ -376,12 +378,12 @@ func (h *ObservabilityHandler) HandleTraces(w http.ResponseWriter, r *http.Reque
 // HandleLogs returns log endpoint
 func (h *ObservabilityHandler) HandleLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	level := r.URL.Query().Get("level")
 	limit := 100
-	
+
 	logs := GlobalLogCollector.GetLogs(limit, level)
-	
+
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"logs":  logs,
 		"count": len(logs),
@@ -391,22 +393,22 @@ func (h *ObservabilityHandler) HandleLogs(w http.ResponseWriter, r *http.Request
 // HandleStatus returns combined status
 func (h *ObservabilityHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	health := PerformHealthCheck()
 	metrics := GlobalMetrics.GetMetrics()
-	
+
 	status := map[string]interface{}{
 		"service": "nexusai-gateway",
 		"version": "1.0.0",
 		"health":  health,
 		"metrics": metrics,
 	}
-	
+
 	statusCode := http.StatusOK
 	if health.Status != "healthy" {
 		statusCode = http.StatusServiceUnavailable
 	}
-	
+
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(status)
 }
