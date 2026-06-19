@@ -204,6 +204,58 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"UP","service":"nexusai-gateway","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))))
 	})
 
+	// Readiness probe — standard k8s naming (/ready)
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		dbStatus := "disconnected"
+		redisStatus := "disconnected"
+		isReady := true
+
+		// Check DB
+		if db != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := db.PingContext(ctx); err == nil {
+				dbStatus = "connected"
+			} else {
+				dbStatus = "degraded"
+				if !cfg.EnableSandboxFallback {
+					isReady = false
+				}
+			}
+		} else {
+			if !cfg.EnableSandboxFallback {
+				isReady = false
+			}
+		}
+
+		// Check Redis via quotaStorage
+		if quotaStorage != nil {
+			if err := quotaStorage.Ping(context.Background()); err == nil {
+				redisStatus = "connected"
+			} else {
+				redisStatus = "degraded"
+			}
+		}
+
+		statusStr := "ok"
+		statusCode := http.StatusOK
+		if !isReady {
+			statusStr = "not_ready"
+			statusCode = http.StatusServiceUnavailable
+		}
+
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			`{"status":"%s","service":"nexusai-gateway","database":"%s","redis":"%s","sandbox_fallback_active":%t,"timestamp":"%s"}`,
+			statusStr,
+			dbStatus,
+			redisStatus,
+			cfg.EnableSandboxFallback,
+			time.Now().UTC().Format(time.RFC3339),
+		)))
+	})
+
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		dbStatus := "disconnected"
