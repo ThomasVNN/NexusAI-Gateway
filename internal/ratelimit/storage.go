@@ -14,6 +14,7 @@ type InMemoryStorage struct {
 	mu       sync.RWMutex
 	data     map[string]*inMemoryEntry
 	counters map[string]int64
+	done     chan struct{}
 }
 
 // inMemoryEntry represents a time-bucketed counter entry
@@ -27,6 +28,7 @@ func NewInMemoryStorage() *InMemoryStorage {
 	return &InMemoryStorage{
 		data:     make(map[string]*inMemoryEntry),
 		counters: make(map[string]int64),
+		done:     make(chan struct{}),
 	}
 }
 
@@ -108,12 +110,17 @@ func (s *InMemoryStorage) SetCount(ctx context.Context, key string, count int64,
 	s.counters[key] = count
 
 	if expiration > 0 {
-		// Schedule cleanup
 		go func() {
-			time.Sleep(expiration)
-			s.mu.Lock()
-			delete(s.counters, key)
-			s.mu.Unlock()
+			timer := time.NewTimer(expiration)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				s.mu.Lock()
+				delete(s.counters, key)
+				s.mu.Unlock()
+			case <-s.done:
+				return
+			}
 		}()
 	}
 
@@ -225,10 +232,13 @@ func (s *InMemoryStorage) Ping(ctx context.Context) error {
 	return nil // In-memory is always healthy
 }
 
-// Close closes the storage connection
+// Close closes the storage connection and stops all background goroutines
 func (s *InMemoryStorage) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	close(s.done)
+	s.done = make(chan struct{})
 
 	s.data = make(map[string]*inMemoryEntry)
 	s.counters = make(map[string]int64)
