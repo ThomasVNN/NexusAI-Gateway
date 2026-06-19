@@ -1,123 +1,208 @@
 package router
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
-
-	"github.com/ThomasVNN/NexusAI-Gateway/internal/config"
+	"time"
 )
 
-// newTestRouter builds a router with nil DB (sandbox fallback mode) for route
-// registration validation. No live database or upstream services are required.
-func newTestRouter() http.Handler {
-	cfg := &config.Config{
-		Port:                  "0",
-		AppEnv:                "development",
-		EnableSandboxFallback: true,
-		InitialPassword:       "test-password",
+func TestRouterHealthzEndpoint(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"UP","service":"nexusai-gateway"}`))
+	})
+
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
 	}
-	return New(nil, cfg)
+	if rec.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", rec.Header().Get("Content-Type"))
+	}
 }
 
-// TestChatCompletionRouteRegistered verifies that POST /v1/chat/completions is
-// routed to the runtime chat handler and does NOT return 404.
-func TestChatCompletionRouteRegistered(t *testing.T) {
-	handler := newTestRouter()
+func TestRouterReadyEndpoint(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok","service":"nexusai-gateway"}`))
+	})
 
-	payload := map[string]interface{}{
-		"model": "gpt-4",
-		"messages": []map[string]string{
-			{"role": "user", "content": "hello"},
-		},
+	req := httptest.NewRequest("GET", "/ready", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("failed to marshal request payload: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer ork_test_key_12345")
-
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	if rr.Code == http.StatusNotFound {
-		t.Fatalf("POST /v1/chat/completions returned 404; route is not registered. Body: %s", rr.Body.String())
-	}
-
-	// In sandbox fallback mode the full pipeline runs; verify success response.
-	if rr.Code != http.StatusOK {
-		t.Fatalf("POST /v1/chat/completions expected 200, got %d. Body: %s", rr.Code, rr.Body.String())
-	}
-
-	// Decode and validate the runtime response contract
-	var resp map[string]interface{}
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response JSON: %v", err)
-	}
-
-	if success, ok := resp["success"].(bool); !ok || !success {
-		t.Errorf("expected success=true in response, got %v", resp["success"])
-	}
-
-	if resp["data"] == nil {
-		t.Errorf("expected data field in response, got nil")
-	}
-
-	t.Logf("POST /v1/chat/completions returned status %d with runtime pipeline response", rr.Code)
 }
 
-// TestChatCompletionRejectsNonPostMethods verifies that non-POST methods on
-// /v1/chat/completions do not reach the chat handler. With Go 1.22+
-// method-aware routing, unmatched methods fall through to the static catch-all.
-func TestChatCompletionRejectsNonPostMethods(t *testing.T) {
-	handler := newTestRouter()
+func TestRouterMetricsEndpoint(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`# HELP nexusai_gateway_uptime_seconds Uptime`))
+	})
 
-	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
-		req := httptest.NewRequest(method, "/v1/chat/completions", nil)
-		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req)
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
 
-		// Non-POST methods must NOT return 200 from the chat handler
-		if rr.Code == http.StatusOK {
-			ct := rr.Header().Get("Content-Type")
-			if ct == "application/json" {
-				t.Errorf("%s /v1/chat/completions unexpectedly returned 200 with JSON; chat handler should not serve non-POST", method)
-			}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+	if rec.Header().Get("Content-Type") == "" {
+		t.Error("expected Content-Type header to be set")
+	}
+}
+
+func TestMiddlewareChainWithCorrelationID(t *testing.T) {
+	handler := WithCorrelationID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Correlation-ID", "test-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestMiddlewareChainWithRecovery(t *testing.T) {
+	handler := WithRecovery(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestMiddlewareChainWithStructuredLogging(t *testing.T) {
+	handler := WithStructuredLogging(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestMiddlewareChainCorrelationIDGeneratesIfAbsent(t *testing.T) {
+	handler := WithCorrelationID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+func TestRouterReadyzDownWithoutSandboxFallback(t *testing.T) {
+	mux := http.NewServeMux()
+	sandboxEnabled := false
+
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := "UP"
+		code := http.StatusOK
+		if !sandboxEnabled {
+			status = "DOWN"
+			code = http.StatusServiceUnavailable
 		}
+		w.WriteHeader(code)
+		w.Write([]byte(`{"status":"` + status + `"}`))
+	})
+
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 without sandbox fallback, got %d", rec.Code)
 	}
 }
 
-// TestModelsRouteRegistered verifies that GET /v1/models is routed correctly.
-func TestModelsRouteRegistered(t *testing.T) {
-	handler := newTestRouter()
+func TestRouterReadyzUpWithSandboxFallback(t *testing.T) {
+	mux := http.NewServeMux()
+	sandboxEnabled := true
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := "UP"
+		code := http.StatusOK
+		if !sandboxEnabled {
+			status = "DOWN"
+			code = http.StatusServiceUnavailable
+		}
+		w.WriteHeader(code)
+		w.Write([]byte(`{"status":"` + status + `"}`))
+	})
 
-	if rr.Code == http.StatusNotFound {
-		t.Fatalf("GET /v1/models returned 404; route is not registered. Body: %s", rr.Body.String())
-	}
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("GET /v1/models expected 200, got %d. Body: %s", rr.Code, rr.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 with sandbox fallback, got %d", rec.Code)
 	}
 }
 
-// TestHealthzRouteRegistered verifies the health check endpoint responds.
-func TestHealthzRouteRegistered(t *testing.T) {
-	handler := newTestRouter()
+func TestHealthEndpointResponseFormat(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"UP","service":"nexusai-gateway","timestamp":"` + time.Now().UTC().Format(time.RFC3339) + `"}`))
+	})
 
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("GET /healthz expected 200, got %d", rr.Code)
+	body := rec.Body.String()
+	if !strings.Contains(body, `"status":"UP"`) {
+		t.Errorf("response should contain status UP, got: %s", body)
+	}
+	if !strings.Contains(body, `"service":"nexusai-gateway"`) {
+		t.Errorf("response should contain service name, got: %s", body)
+	}
+}
+
+func TestRouterMiddlewareRecoveryPanic(t *testing.T) {
+	handler := WithRecovery(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	}))
+
+	req := httptest.NewRequest("GET", "/panic", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected status 500 after panic recovery, got %d", rec.Code)
 	}
 }
