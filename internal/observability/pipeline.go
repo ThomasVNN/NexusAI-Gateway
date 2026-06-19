@@ -1,7 +1,6 @@
 package observability
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,8 +9,8 @@ import (
 	"time"
 )
 
-// Metrics represents system metrics
-type Metrics struct {
+// PipelineMetrics represents system metrics for the pipeline
+type PipelineMetrics struct {
 	mu sync.RWMutex
 	// Request metrics
 	TotalRequests   int64
@@ -38,8 +37,8 @@ type Metrics struct {
 	Uptime    time.Duration
 }
 
-// GlobalMetrics is the global metrics instance
-var GlobalMetrics = &Metrics{
+// GlobalPipelineMetrics is the global metrics instance
+var GlobalPipelineMetrics = &PipelineMetrics{
 	ModelRequests:  make(map[string]int64),
 	ModelTokens:    make(map[string]int64),
 	ModelErrors:    make(map[string]int64),
@@ -48,7 +47,7 @@ var GlobalMetrics = &Metrics{
 }
 
 // RecordRequest records a request
-func (m *Metrics) RecordRequest(tenantID, modelID string, success bool, latencyMs int64) {
+func (m *PipelineMetrics) RecordRequest(tenantID, modelID string, success bool, latencyMs int64) {
 	atomic.AddInt64(&m.TotalRequests, 1)
 
 	if success {
@@ -97,8 +96,8 @@ func (m *Metrics) RecordRequest(tenantID, modelID string, success bool, latencyM
 	}
 }
 
-// GetMetrics returns current metrics as a map
-func (m *Metrics) GetMetrics() map[string]interface{} {
+// GetPipelineMetrics returns current metrics as a map
+func (m *PipelineMetrics) GetPipelineMetrics() map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -339,11 +338,11 @@ func NewObservabilityHandler() *ObservabilityHandler {
 	return &ObservabilityHandler{}
 }
 
-// HandleMetrics returns metrics endpoint
-func (h *ObservabilityHandler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
+// HandlePipelineMetrics returns metrics endpoint
+func (h *ObservabilityHandler) HandlePipelineMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	metrics := GlobalMetrics.GetMetrics()
+	metrics := GlobalPipelineMetrics.GetPipelineMetrics()
 	_ = json.NewEncoder(w).Encode(metrics)
 }
 
@@ -395,7 +394,7 @@ func (h *ObservabilityHandler) HandleStatus(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 
 	health := PerformHealthCheck()
-	metrics := GlobalMetrics.GetMetrics()
+	metrics := GlobalPipelineMetrics.GetPipelineMetrics()
 
 	status := map[string]interface{}{
 		"service": "nexusai-gateway",
