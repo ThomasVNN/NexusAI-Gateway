@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 )
@@ -19,16 +20,18 @@ const (
 )
 
 // Global entropy pool and mutex for thread-safe ID generation
+// Fallback counter protected by its own mutex to avoid deadlock
 var (
-	entropyPool  []byte
-	entropyMutex sync.Mutex
+	entropyPool     []byte
+	entropyMutex    sync.Mutex
+	fallbackCounter uint64
+	fallbackMutex   sync.Mutex
 )
 
 func init() {
-	// Pre-seed the entropy pool
 	entropyPool = make([]byte, 32)
 	if _, err := rand.Read(entropyPool); err != nil {
-		panic("failed to initialize entropy pool: " + err.Error())
+		log.Fatalf("failed to initialize entropy pool: %v", err)
 	}
 }
 
@@ -65,11 +68,11 @@ func encodeTimestamp(ms int64) string {
 func encodeRandom() string {
 	result := make([]byte, randomLen)
 
-	// Refill pool if needed
 	if len(entropyPool) < randomLen {
 		newPool := make([]byte, 32)
 		if _, err := rand.Read(newPool); err != nil {
-			panic("failed to read entropy: " + err.Error())
+			log.Printf("WARN: failed to read entropy, using fallback ID: %v", err)
+			return encodeFallback()
 		}
 		entropyPool = newPool
 	}
@@ -77,12 +80,30 @@ func encodeRandom() string {
 	copy(result, entropyPool[:randomLen])
 	entropyPool = entropyPool[randomLen:]
 
-	// Encode to Crockford Base32 alphabet
 	for i := range result {
 		result[i] = ulidAlphabet[int(result[i])&0x1F]
 	}
 
 	return string(result)
+}
+
+// encodeFallback generates a less-secure but working ID using timestamp+counter
+func encodeFallback() string {
+	fallbackMutex.Lock()
+	fallbackCounter++
+	counter := fallbackCounter
+	fallbackMutex.Unlock()
+
+	now := time.Now().UnixMilli()
+	var combined uint64 = (uint64(now) << 20) | (counter & 0xFFFFF)
+
+	var chars [randomLen]byte
+	for i := randomLen - 1; i >= 0; i-- {
+		idx := combined & 0x1F
+		chars[i] = ulidAlphabet[idx]
+		combined >>= 5
+	}
+	return string(chars[:])
 }
 
 // ParseEventID extracts the timestamp component from an event ID
@@ -129,9 +150,21 @@ func toUpper(c byte) byte {
 func GenerateClientID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic("failed to generate client ID: " + err.Error())
+		log.Printf("WARN: failed to generate secure client ID, using fallback: %v", err)
+		return generateFallbackClientID()
 	}
 	return base64.URLEncoding.EncodeToString(b)[:22]
+}
+
+// generateFallbackClientID creates a less-secure but working client ID
+func generateFallbackClientID() string {
+	fallbackMutex.Lock()
+	fallbackCounter++
+	counter := fallbackCounter
+	fallbackMutex.Unlock()
+
+	ts := time.Now().UnixNano()
+	return fmt.Sprintf("fb_%d_%016x", ts, counter)
 }
 
 // GenerateSubscriptionID creates a unique subscription identifier
