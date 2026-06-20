@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="-apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <linearGradient id="gw-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="gw-box" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1D4ED8"/><stop offset="1" stop-color="#1E3A8A"/>
+    </linearGradient>
+    <marker id="gw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94A3B8"/>
+    </marker>
+  </defs>
+  <rect width="900" height="520" fill="url(#gw-bg)"/>
+  <text x="450" y="36" text-anchor="middle" fill="#F1F5F9" font-size="22" font-weight="700">NexusAI-Gateway  AI Request Lifecycle</text>
+  <text x="450" y="58" text-anchor="middle" fill="#94A3B8" font-size="12">Bounded Context: Gateway · Owner: Dev Agent</text>
+
+  <g font-size="12" fill="#F1F5F9">
+    <!-- Stage 1: Ingress -->
+    <rect x="40" y="90" width="200" height="320" rx="10" fill="url(#gw-box)" stroke="#3B82F6" stroke-width="1.5"/>
+    <text x="140" y="116" text-anchor="middle" font-weight="700">1. INGRESS</text>
+    <g fill="#DBEAFE" font-size="11">
+      <text x="60" y="148">POST /v1/chat/completions</text>
+      <text x="60" y="168">POST /v1/embeddings</text>
+      <text x="60" y="188">GET  /v1/models</text>
+      <text x="60" y="208">POST /mcp/v1/message</text>
+      <text x="60" y="228">GET  /mcp/v1/tools</text>
+      <text x="60" y="248">GET  /mcp/v1/stream</text>
+      <text x="60" y="278" fill="#94A3B8" font-size="10" font-style="italic">OpenAI-compatible</text>
+      <text x="60" y="294" fill="#94A3B8" font-size="10" font-style="italic">+ MCP transport</text>
+    </g>
+
+    <!-- Stage 2: Policy -->
+    <rect x="260" y="90" width="200" height="320" rx="10" fill="url(#gw-box)" stroke="#3B82F6" stroke-width="1.5"/>
+    <text x="360" y="116" text-anchor="middle" font-weight="700">2. POLICY</text>
+    <g fill="#DBEAFE" font-size="11">
+      <text x="280" y="148">= API Key validation (hashed)</text>
+      <text x="280" y="170">=á Quota &amp; rate-limit check</text>
+      <text x="280" y="192">=á Per-tenant token bucket</text>
+      <text x="280" y="214">=u PII redaction pipeline</text>
+      <text x="280" y="236">=Ñ Kill-switch check (Platform)</text>
+      <text x="280" y="258">=Ñ Safety evaluation hook</text>
+      <text x="280" y="288" fill="#94A3B8" font-size="10" font-style="italic">Denies: 401 / 429 / 403</text>
+    </g>
+
+    <!-- Stage 3: Routing -->
+    <rect x="480" y="90" width="200" height="320" rx="10" fill="url(#gw-box)" stroke="#3B82F6" stroke-width="1.5"/>
+    <text x="580" y="116" text-anchor="middle" font-weight="700">3. ROUTING</text>
+    <g fill="#DBEAFE" font-size="11">
+      <text x="500" y="148">Route rule evaluation</text>
+      <text x="500" y="168">(priority, conditions)</text>
+      <text x="500" y="196">Provider selection:</text>
+      <text x="510" y="216" fill="#A5B4FC">  OpenAI · Anthropic</text>
+      <text x="510" y="234" fill="#A5B4FC">  Google · Mistral</text>
+      <text x="510" y="252" fill="#A5B4FC">  DeepSeek · Meta · xAI</text>
+      <text x="510" y="270" fill="#A5B4FC">  Cohere · AI21 · Perplexity</text>
+      <text x="500" y="294">Multi-model fallback chain</text>
+      <text x="500" y="312">Circuit breaker + retry</text>
+    </g>
+
+    <!-- Stage 4: Upstream -->
+    <rect x="700" y="90" width="160" height="320" rx="10" fill="#0B1220" stroke="#3B82F6" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="780" y="116" text-anchor="middle" font-weight="700">4. UPSTREAM</text>
+    <g fill="#CBD5E1" font-size="11">
+      <text x="720" y="148">External providers</text>
+      <text x="720" y="168">or local self-hosted</text>
+      <text x="720" y="198" fill="#94A3B8" font-size="10" font-style="italic">20+ providers</text>
+      <text x="720" y="216" fill="#94A3B8" font-size="10" font-style="italic">60+ models</text>
+      <text x="720" y="240">SSE streaming</text>
+      <text x="720" y="260">batch processing</text>
+      <text x="720" y="280">function-calling</text>
+    </g>
+
+    <!-- Arrows -->
+    <g stroke="#94A3B8" stroke-width="2" fill="none" marker-end="url(#gw-arrow)">
+      <line x1="240" y1="250" x2="260" y2="250"/>
+      <line x1="460" y1="250" x2="480" y2="250"/>
+      <line x1="680" y1="250" x2="700" y2="250"/>
+    </g>
+
+    <!-- Sidecars: storage / observability -->
+    <rect x="40" y="430" width="820" height="60" rx="8" fill="#0B1220" stroke="#334155"/>
+    <text x="450" y="454" text-anchor="middle" fill="#94A3B8" font-size="11" font-weight="600">SIDE EFFECTS</text>
+    <g fill="#CBD5E1" font-size="11">
+      <text x="80" y="478">PostgreSQL · usage + key storage</text>
+      <text x="320" y="478">Redis · rate-limit + session cache</text>
+      <text x="540" y="478">NATS · async event publishing</text>
+      <text x="760" y="478">OpenTelemetry · metrics + traces</text>
+    </g>
+  </g>
+</svg>
