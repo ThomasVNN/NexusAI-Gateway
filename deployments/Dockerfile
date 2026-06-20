@@ -1,22 +1,15 @@
-# Stage 1: Build static assets
-FROM node:22-alpine AS web-builder
-WORKDIR /app/web
-COPY web/package*.json ./
-RUN npm install
-COPY web/ ./
-RUN npm run build
-
-# Stage 2: Compile the high-performance Go application
-FROM golang:1.22.0-alpine AS go-builder
+# Stage 1: Compile the high-performance Go application
+FROM golang:1.24-alpine AS go-builder
+ENV GOTOOLCHAIN=auto
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# Copy static assets generated from Stage 1 into the Go build path
-COPY --from=web-builder /app/web/dist /app/web/dist
+# Ensure web/dist exists (embedded assets — may be empty in main)
+RUN mkdir -p web/dist && touch web/dist/.keep
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o bin/nexusai-gateway ./cmd/gateway
 
-# Stage 3: Minimal hardened runner package
+# Stage 2: Minimal hardened runner package
 FROM alpine:3.19 AS runner
 RUN apk add --no-cache ca-certificates tzdata
 
