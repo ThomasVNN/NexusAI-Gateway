@@ -1,4 +1,4 @@
-package main
+package auto
 
 // BLG-153: Address tech debt in NexusAI-Gateway
 // Source: SA Tech Debt Review cycle 33
