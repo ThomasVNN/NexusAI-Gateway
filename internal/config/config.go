@@ -24,6 +24,7 @@ type Config struct {
 	// Observability configuration
 	ObservabilityEnabled bool
 	OTLPEndpoint         string
+	OTELServiceName      string
 	// New-API Features
 	EnableRetry        bool
 	MaxRetryCount      int
@@ -103,7 +104,16 @@ func Load() *Config {
 	if appEnv == "production" || appEnv == "staging" {
 		observabilityEnabled = true
 	}
-	otlpEndpoint := os.Getenv("OTLP_ENDPOINT")
+	otlpEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if otlpEndpoint == "" {
+		otlpEndpoint = os.Getenv("OTLP_ENDPOINT") // Legacy support
+	}
+
+	// OTEL service name (defaults to nexusai-gateway)
+	otelServiceName := os.Getenv("OTEL_SERVICE_NAME")
+	if otelServiceName == "" {
+		otelServiceName = "nexusai-gateway"
+	}
 
 	// New-API feature configuration
 	enableRetry := os.Getenv("ENABLE_RETRY") != "false" // Default enabled
@@ -147,6 +157,7 @@ func Load() *Config {
 		CORSAllowedOrigins:    corsOrigins,
 		ObservabilityEnabled:  observabilityEnabled,
 		OTLPEndpoint:          otlpEndpoint,
+		OTELServiceName:       otelServiceName,
 		EnableRetry:           enableRetry,
 		MaxRetryCount:         maxRetryCount,
 		RetryBaseDelayMS:      retryBaseDelayMS,

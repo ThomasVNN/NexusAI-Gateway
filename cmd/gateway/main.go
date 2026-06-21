@@ -44,7 +44,7 @@ func main() {
 	defer obsCancel()
 
 	if err := observability.Init(obsCtx, observability.Config{
-		ServiceName:    "nexusai-gateway",
+		ServiceName:    cfg.OTELServiceName,
 		ServiceVersion: "1.0.0",
 		OTLPEndpoint:   cfg.OTLPEndpoint,
 		Enabled:        cfg.ObservabilityEnabled,
