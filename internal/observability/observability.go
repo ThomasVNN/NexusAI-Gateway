@@ -74,6 +74,11 @@ func Init(ctx context.Context, cfg Config) error {
 	// Set the global metrics collector to the Prometheus implementation
 	GlobalMetrics = &PrometheusMetricsCollector{metrics: GetGlobalMetrics()}
 
+	// Initialize OTEL metrics (optional - continues gracefully if OTLP not configured)
+	if err := InitOTELMetrics(ctx, cfg); err != nil {
+		slog.Warn("OTEL metrics initialization failed (continuing without OTEL metrics)", slog.Any("error", err))
+	}
+
 	slog.Info("Observability initialized",
 		slog.String("service", cfg.ServiceName),
 		slog.Bool("otel_enabled", cfg.Enabled),

@@ -250,10 +250,21 @@ func WithTracing(next http.Handler) http.Handler {
 
 		duration := time.Since(startTime)
 
-		// Record metrics if available
+		// Record metrics using Prometheus
 		m := observability.GetGlobalMetrics()
 		if m != nil {
 			m.ObserveRequest(r.Method, r.URL.Path, wrappedWriter.statusCode, duration)
+		}
+
+		// Record OTEL metrics if available
+		otelMetrics := observability.GetOTELMetrics()
+		if otelMetrics != nil {
+			attrs := map[string]string{
+				"http.method": r.Method,
+				"http.path":   r.URL.Path,
+				"http.status": statusCodeToLabel(wrappedWriter.statusCode),
+			}
+			otelMetrics.RecordRequest(r.Context(), attrs, duration, wrappedWriter.statusCode)
 		}
 
 		// Log with full trace context
@@ -362,4 +373,20 @@ func WithRateLimiting(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// statusCodeToLabel converts HTTP status code to Prometheus label
+func statusCodeToLabel(code int) string {
+	switch {
+	case code >= 200 && code < 300:
+		return "2xx"
+	case code >= 300 && code < 400:
+		return "3xx"
+	case code >= 400 && code < 500:
+		return "4xx"
+	case code >= 500:
+		return "5xx"
+	default:
+		return "unknown"
+	}
 }

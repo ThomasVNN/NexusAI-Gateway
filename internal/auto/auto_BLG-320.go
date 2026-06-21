@@ -1,15 +1,10 @@
 // Auto-generated stub for BLG-320
-// Cycle: 1013
-// Method: 1. cd NexusAI-Gateway
-2. Create internal/token/service_test.go
-3. go test ./internal/token/...
-4. gi
-// Purpose: Cover token management logic for security audit
+// Purpose: Maintain NexusAI-Gateway codebase quality and test coverage
 
 package auto
 
-// TODO(implement): Add token service unit tests
+// TODO(implement): [NexusAI-Gateway] Auto-research item BLG-320
 // Acceptance criteria:
-//// - go test ./internal/token/... passes
-// - Test token generation
-// - Test token group operations
+// - Build passes (go build ./... or tsc)
+// - Code compiles without errors
+// - Branch pushed to origin
