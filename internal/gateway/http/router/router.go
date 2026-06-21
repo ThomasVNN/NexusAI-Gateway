@@ -324,9 +324,11 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Wrap routing stack in our production-grade middleware layers
 	return WithRecovery(
 		WithCorrelationID(
-			WithStructuredLogging(
-				WithRateLimiting(
-					rateLimitMiddleware.Middleware(mux),
+			WithTracing(
+				WithStructuredLogging(
+					WithRateLimiting(
+						rateLimitMiddleware.Middleware(mux),
+					),
 				),
 			),
 		),
