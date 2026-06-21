@@ -18,6 +18,7 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/log"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/observability"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/privacy"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/provider"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/ratelimit"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/runtime"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/storage/memory"
@@ -112,6 +113,8 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	var uService *user.Service
 	var logService *log.Service
 	var billingService *billing.Service
+	var providerService *provider.Service
+	var providerHandler *handler.ProviderHandler
 
 	if isDbHealthy {
 		// Channel management
@@ -133,6 +136,11 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		// Billing
 		billingRepo := billing.NewRepository(db.DB)
 		billingService = billing.NewService(billingRepo)
+
+		// Provider management (NX-204)
+		providerRepo := provider.NewRepository(db.DB)
+		providerService = provider.NewService(providerRepo)
+		providerHandler = handler.NewProviderHandler(providerService)
 
 		// Initialize API handler with all services
 		apiHandler = handler.NewAPIHandler(chService, tgService, uService, logService, billingService)
@@ -168,6 +176,13 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux.HandleFunc("/v1/rate-limits/reset", rateLimitHandler.ServeHTTP)
 	mux.HandleFunc("/v1/rate-limits/quota", rateLimitHandler.ServeHTTP)
 	mux.HandleFunc("/v1/rate-limits/health", rateLimitHandler.ServeHTTP)
+
+	// new-api: Provider Registry Endpoints (NX-204)
+	if providerHandler != nil {
+		mux.HandleFunc("/v1/providers", providerHandler.HandleProviders)
+		mux.HandleFunc("/v1/providers/", providerHandler.HandleProvider)
+		mux.HandleFunc("/v1/providers/select", providerHandler.HandleProviderSelect)
+	}
 
 	// new-api: Channel Management Endpoints
 	if apiHandler != nil {
@@ -324,9 +339,11 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Wrap routing stack in our production-grade middleware layers
 	return WithRecovery(
 		WithCorrelationID(
-			WithStructuredLogging(
-				WithRateLimiting(
-					rateLimitMiddleware.Middleware(mux),
+			WithTracing(
+				WithStructuredLogging(
+					WithRateLimiting(
+						rateLimitMiddleware.Middleware(mux),
+					),
 				),
 			),
 		),
