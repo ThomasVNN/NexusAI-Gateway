@@ -227,6 +227,30 @@ func bootstrapSchema(ctx context.Context, db *sql.DB) error {
 	    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 
+	-- Provider Registry (NX-204)
+	CREATE TABLE IF NOT EXISTS providers (
+	    id VARCHAR(255) PRIMARY KEY,
+	    name VARCHAR(255) NOT NULL,
+	    type VARCHAR(50) NOT NULL,
+	    endpoint TEXT NOT NULL,
+	    credentials TEXT,
+	    status VARCHAR(20) NOT NULL DEFAULT 'active',
+	    priority INT NOT NULL DEFAULT 100,
+	    enabled BOOLEAN NOT NULL DEFAULT true,
+	    health_check_url TEXT,
+	    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+	    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Provider Health Tracking (NX-204)
+	CREATE TABLE IF NOT EXISTS provider_health (
+	    provider_id VARCHAR(255) PRIMARY KEY REFERENCES providers(id) ON DELETE CASCADE,
+	    last_health_check TIMESTAMP WITH TIME ZONE,
+	    error_count INT NOT NULL DEFAULT 0,
+	    latency_p99 DECIMAL(10, 2) DEFAULT 0,
+	    success_rate DECIMAL(5, 2) DEFAULT 100.0
+	);
+
 	-- Indexes
 	CREATE INDEX IF NOT EXISTS idx_usage_key_created ON usage_records(key_id, created_at);
 	CREATE INDEX IF NOT EXISTS idx_channels_type ON channels(type);
@@ -242,6 +266,9 @@ func bootstrapSchema(ctx context.Context, db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_billing_records_user ON billing_records(user_id);
 	CREATE INDEX IF NOT EXISTS idx_billing_records_created ON billing_records(created_at);
 	CREATE INDEX IF NOT EXISTS idx_model_pricing_name ON model_pricing(model_name);
+	CREATE INDEX IF NOT EXISTS idx_providers_type ON providers(type);
+	CREATE INDEX IF NOT EXISTS idx_providers_enabled ON providers(enabled);
+	CREATE INDEX IF NOT EXISTS idx_providers_status ON providers(status);
 	`
 	_, err := db.ExecContext(ctx, schemaQuery)
 	return err

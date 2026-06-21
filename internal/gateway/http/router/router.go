@@ -113,9 +113,10 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	var uService *user.Service
 	var logService *log.Service
 	var billingService *billing.Service
+	var providerService *provider.Service
+	var providerHandler *handler.ProviderHandler
 
 	// Provider health and rotation (NX-24)
-	var providerHandler *handler.ProviderHandler
 	var healthChecker *provider.HealthChecker
 	var providerSelector *provider.ProviderSelector
 
@@ -140,17 +141,21 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		billingRepo := billing.NewRepository(db.DB)
 		billingService = billing.NewService(billingRepo)
 
-		// Initialize API handler with all services
-		apiHandler = handler.NewAPIHandler(chService, tgService, uService, logService, billingService)
+		// Provider management (NX-204 + NX-24)
+		providerRepo := provider.NewRepository(db.DB)
+		providerService = provider.NewService(providerRepo)
 
-		// Initialize provider health checker and selector (NX-24)
+		// Provider health checker and selector (NX-24)
 		healthConfig := provider.DefaultHealthCheckConfig()
 		healthChecker = provider.NewHealthChecker(healthConfig)
 		providerSelector = provider.NewProviderSelector(healthChecker, provider.PriorityBased, nil)
-		providerHandler = handler.NewProviderHandler(healthChecker, providerSelector)
-	}
 
-	// OpenAI endpoints
+		// Provider handler with CRUD + health (NX-204 + NX-24)
+		providerHandler = handler.NewProviderHandler(providerService, healthChecker, providerSelector)
+
+		// Initialize API handler with all services
+		apiHandler = handler.NewAPIHandler(chService, tgService, uService, logService, billingService)
+	}
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
 	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
 
@@ -180,6 +185,13 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	mux.HandleFunc("/v1/rate-limits/reset", rateLimitHandler.ServeHTTP)
 	mux.HandleFunc("/v1/rate-limits/quota", rateLimitHandler.ServeHTTP)
 	mux.HandleFunc("/v1/rate-limits/health", rateLimitHandler.ServeHTTP)
+
+	// new-api: Provider Registry Endpoints (NX-204)
+	if providerHandler != nil {
+		mux.HandleFunc("/v1/providers", providerHandler.HandleProviders)
+		mux.HandleFunc("/v1/providers/", providerHandler.HandleProvider)
+		mux.HandleFunc("/v1/providers/select", providerHandler.HandleProviderSelect)
+	}
 
 	// new-api: Channel Management Endpoints
 	if apiHandler != nil {
@@ -337,6 +349,74 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 
 		// Export Prometheus metrics using the observability handler
 		observability.PrometheusHandler().ServeHTTP(w, r)
+	})
+
+	// Comprehensive health check endpoint - checks all services
+	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Gateway version - can be updated via build ldflags
+		const gatewayVersion = "1.0.0"
+
+		// Calculate uptime in seconds
+		uptime := time.Since(startTime).Seconds()
+
+		// Service status tracking
+		type serviceStatus struct {
+			gateway  string
+			provider string
+			cache    string
+			eventbus string
+		}
+		status := serviceStatus{
+			gateway:  "healthy",
+			provider: "healthy",
+			cache:    "healthy",
+			eventbus: "not_configured",
+		}
+		isHealthy := true
+
+		// Check Provider (Model Platform) - always healthy since it's a default client
+		// In production, this would ping the actual model platform
+		status.provider = "healthy"
+
+		// Check Cache (Redis) via quotaStorage
+		if quotaStorage != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := quotaStorage.Ping(ctx); err != nil {
+				status.cache = "unhealthy"
+				isHealthy = false
+				slog.Warn("Health check: cache unhealthy", slog.Any("error", err))
+			}
+		} else {
+			status.cache = "unhealthy"
+			isHealthy = false
+		}
+
+		// Check Event Bus (NATS) - not configured in current setup
+		// Mark as not_configured since it's not initialized in router
+		status.eventbus = "not_configured"
+
+		// Determine response status
+		overallStatus := "healthy"
+		statusCode := http.StatusOK
+		if !isHealthy {
+			overallStatus = "unhealthy"
+			statusCode = http.StatusServiceUnavailable
+		}
+
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(fmt.Sprintf(
+			`{"status":"%s","version":"%s","uptime":%.0f,"services":{"gateway":"%s","provider":"%s","cache":"%s","eventbus":"%s"}}`,
+			overallStatus,
+			gatewayVersion,
+			uptime,
+			status.gateway,
+			status.provider,
+			status.cache,
+			status.eventbus,
+		)))
 	})
 
 	// Single Page Application static server

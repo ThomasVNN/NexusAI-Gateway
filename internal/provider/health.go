@@ -243,8 +243,8 @@ func (hc *HealthChecker) CheckProvider(provider *Provider) *HealthCheckResult {
 	}
 
 	// Add auth header if available
-	if provider.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+	if provider.Credentials != "" {
+		req.Header.Set("Authorization", "Bearer "+provider.Credentials)
 	}
 
 	client := &http.Client{Timeout: hc.config.Timeout}

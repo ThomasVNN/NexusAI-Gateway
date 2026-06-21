@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -10,21 +9,23 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/provider"
 )
 
-// ProviderHandler handles provider health and rotation endpoints
-type ProviderHandler struct {
-	healthChecker    *provider.HealthChecker
-	providerSelector *provider.ProviderSelector
-}
-
-// NewProviderHandler creates a new provider handler
-func NewProviderHandler(healthChecker *provider.HealthChecker, selector *provider.ProviderSelector) *ProviderHandler {
+// NewProviderHandler creates a handler for provider endpoints
+func NewProviderHandler(svc *provider.Service, healthChecker *provider.HealthChecker, selector *provider.ProviderSelector) *ProviderHandler {
 	return &ProviderHandler{
+		svc:              svc,
 		healthChecker:    healthChecker,
 		providerSelector: selector,
 	}
 }
 
-// HandleProviders handles /v1/providers endpoints
+// ProviderHandler handles provider CRUD endpoints
+type ProviderHandler struct {
+	svc              *provider.Service
+	healthChecker    *provider.HealthChecker
+	providerSelector *provider.ProviderSelector
+}
+
+// HandleProviders handles /v1/providers
 func (h *ProviderHandler) HandleProviders(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
@@ -36,11 +37,17 @@ func (h *ProviderHandler) HandleProviders(w http.ResponseWriter, r *http.Request
 	}
 }
 
-// HandleProvider handles /v1/providers/:id endpoints
+// HandleProvider handles /v1/providers/{id}
 func (h *ProviderHandler) HandleProvider(w http.ResponseWriter, r *http.Request) {
 	id := extractProviderID(r.URL.Path)
 	if id == "" {
-		http.Error(w, "Invalid provider ID", http.StatusBadRequest)
+		http.Error(w, `{"error": "provider id is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Handle /v1/providers/health specially
+	if id == "health" {
+		h.HandleAllProviderHealth(w, r)
 		return
 	}
 
@@ -56,11 +63,27 @@ func (h *ProviderHandler) HandleProvider(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// HandleProviderHealth handles /v1/providers/:id/health endpoints
+// HandleAllProviderHealth handles /v1/providers/health
+func (h *ProviderHandler) HandleAllProviderHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.healthChecker == nil {
+		http.Error(w, `{"error": "health checker not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	status := h.healthChecker.GetAllHealthStatus()
+	respondJSON(w, status)
+}
+
+// HandleProviderHealth handles /v1/providers/{id}/health
 func (h *ProviderHandler) HandleProviderHealth(w http.ResponseWriter, r *http.Request) {
 	id := extractProviderID(r.URL.Path)
 	if id == "" {
-		http.Error(w, "Invalid provider ID", http.StatusBadRequest)
+		http.Error(w, `{"error": "provider id is required"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -69,199 +92,163 @@ func (h *ProviderHandler) HandleProviderHealth(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	h.getProviderHealth(w, r, id)
+	if r.Method == "GET" {
+		h.getProviderHealth(w, r, id)
+	} else {
+		h.checkProviderHealth(w, r, id)
+	}
 }
 
-// HandleProviderSelect handles /v1/providers/select endpoint
+// HandleProviderSelect handles /v1/providers/select
 func (h *ProviderHandler) HandleProviderSelect(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	h.selectProvider(w, r)
-}
-
-// HandleProviderMetrics handles /v1/providers/:id/metrics endpoints
-func (h *ProviderHandler) HandleProviderMetrics(w http.ResponseWriter, r *http.Request) {
-	id := extractProviderID(r.URL.Path)
-	if id == "" {
-		http.Error(w, "Invalid provider ID", http.StatusBadRequest)
-		return
-	}
-
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	h.getProviderMetrics(w, r, id)
-}
-
-// HandleAllProviderHealth handles /v1/providers/health endpoint
-func (h *ProviderHandler) HandleAllProviderHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if h.providerSelector == nil || h.svc == nil {
+		http.Error(w, `{"error": "selector not available"}`, http.StatusServiceUnavailable)
 		return
 	}
 
-	h.getAllProviderHealth(w, r)
+	providerType := r.URL.Query().Get("type")
+	p, err := h.svc.SelectProvider(r.Context(), provider.ProviderType(providerType))
+	if err != nil {
+		respondError(w, err, http.StatusServiceUnavailable)
+		return
+	}
+
+	respondJSON(w, p.ToResponse())
 }
 
 func (h *ProviderHandler) listProviders(w http.ResponseWriter, r *http.Request) {
-	if h.providerSelector == nil {
-		respondError(w, fmt.Errorf("provider service not initialized"), http.StatusNotImplemented)
-		return
+	filter := &provider.ProviderFilter{}
+
+	if providerType := r.URL.Query().Get("type"); providerType != "" {
+		filter.Type = provider.ProviderType(providerType)
+	}
+	if enabled := r.URL.Query().Get("enabled"); enabled != "" {
+		enabledBool := enabled == "true"
+		filter.Enabled = &enabledBool
+	}
+	if status := r.URL.Query().Get("status"); status != "" {
+		filter.Status = status
 	}
 
-	statuses := h.providerSelector.GetProviderStatus()
-	respondJSON(w, map[string]interface{}{
-		"providers": statuses,
-		"count":     len(statuses),
-	})
-}
+	includeHealth := r.URL.Query().Get("include_health") == "true"
 
-func (h *ProviderHandler) getProvider(w http.ResponseWriter, r *http.Request, id string) {
-	if h.providerSelector == nil {
-		respondError(w, fmt.Errorf("provider service not initialized"), http.StatusNotImplemented)
-		return
-	}
+	var result interface{}
 
-	statuses := h.providerSelector.GetProviderStatus()
-	for _, s := range statuses {
-		if s.Provider != nil && s.Provider.ID == id {
-			respondJSON(w, s)
+	if includeHealth {
+		providers, listErr := h.svc.ListWithHealth(r.Context(), filter)
+		if listErr != nil {
+			respondError(w, listErr, http.StatusInternalServerError)
 			return
 		}
+		result = providers
+	} else {
+		providers, listErr := h.svc.List(r.Context(), filter)
+		if listErr != nil {
+			respondError(w, listErr, http.StatusInternalServerError)
+			return
+		}
+		response := make([]*provider.ProviderResponse, len(providers))
+		for i, p := range providers {
+			response[i] = p.ToResponse()
+		}
+		result = response
 	}
 
-	http.Error(w, "Provider not found", http.StatusNotFound)
+	respondJSON(w, result)
 }
 
 func (h *ProviderHandler) createProvider(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name     string `json:"name"`
-		Type     string `json:"type"`
-		Endpoint string `json:"endpoint"`
-		APIKey   string `json:"api_key"`
-		Priority int    `json:"priority"`
-		Enabled  bool   `json:"enabled"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var p provider.Provider
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		respondError(w, err, http.StatusBadRequest)
 		return
 	}
 
-	// TODO: Call provider repository to create provider
-	respondError(w, fmt.Errorf("provider creation not implemented - depends on NX-204"), http.StatusNotImplemented)
-}
-
-func (h *ProviderHandler) updateProvider(w http.ResponseWriter, r *http.Request, id string) {
-	var req struct {
-		Name     string `json:"name"`
-		Type     string `json:"type"`
-		Endpoint string `json:"endpoint"`
-		APIKey   string `json:"api_key"`
-		Priority int    `json:"priority"`
-		Enabled  bool   `json:"enabled"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, err, http.StatusBadRequest)
-		return
-	}
-
-	// TODO: Call provider repository to update provider
-	respondError(w, fmt.Errorf("provider update not implemented - depends on NX-204"), http.StatusNotImplemented)
-}
-
-func (h *ProviderHandler) deleteProvider(w http.ResponseWriter, r *http.Request, id string) {
-	// TODO: Call provider repository to delete provider
-	respondError(w, fmt.Errorf("provider deletion not implemented - depends on NX-204"), http.StatusNotImplemented)
-}
-
-func (h *ProviderHandler) getProviderHealth(w http.ResponseWriter, r *http.Request, id string) {
-	if h.healthChecker == nil {
-		respondError(w, fmt.Errorf("health checker not initialized"), http.StatusNotImplemented)
-		return
-	}
-
-	status, exists := h.healthChecker.GetHealthStatus(id)
-	if !exists {
-		http.Error(w, "Provider health status not found", http.StatusNotFound)
-		return
-	}
-
-	respondJSON(w, status)
-}
-
-func (h *ProviderHandler) getProviderMetrics(w http.ResponseWriter, r *http.Request, id string) {
-	if h.healthChecker == nil {
-		respondError(w, fmt.Errorf("health checker not initialized"), http.StatusNotImplemented)
-		return
-	}
-
-	metrics, exists := h.healthChecker.GetMetrics(id)
-	if !exists {
-		http.Error(w, "Provider metrics not found", http.StatusNotFound)
-		return
-	}
-
-	respondJSON(w, metrics)
-}
-
-func (h *ProviderHandler) selectProvider(w http.ResponseWriter, r *http.Request) {
-	if h.providerSelector == nil {
-		respondError(w, fmt.Errorf("provider selector not initialized"), http.StatusNotImplemented)
-		return
-	}
-
-	// Parse optional strategy from request body
-	var req struct {
-		Strategy string `json:"strategy"`
-	}
-
-	json.NewDecoder(r.Body).Decode(&req)
-
-	// Apply strategy if specified
-	if req.Strategy != "" {
-		slog.Debug("Provider select requested with strategy", slog.String("strategy", req.Strategy))
-	}
-
-	selected, err := h.providerSelector.SelectProvider(r.Context())
-	if err != nil {
-		if strings.Contains(err.Error(), "no healthy providers") {
-			http.Error(w, "No healthy providers available", http.StatusServiceUnavailable)
-			return
-		}
+	if err := h.svc.Create(r.Context(), &p); err != nil {
 		respondError(w, err, http.StatusInternalServerError)
 		return
 	}
 
-	respondJSON(w, map[string]interface{}{
-		"selected_provider": selected,
-	})
+	slog.Info("Provider created", slog.String("id", p.ID), slog.String("name", p.Name))
+	respondJSON(w, p.ToResponse(), http.StatusCreated)
 }
 
-func (h *ProviderHandler) getAllProviderHealth(w http.ResponseWriter, r *http.Request) {
-	if h.healthChecker == nil {
-		respondError(w, fmt.Errorf("health checker not initialized"), http.StatusNotImplemented)
+func (h *ProviderHandler) getProvider(w http.ResponseWriter, r *http.Request, id string) {
+	includeHealth := r.URL.Query().Get("include_health") == "true"
+
+	if includeHealth {
+		pwh, err := h.svc.GetWithHealth(r.Context(), id)
+		if err != nil {
+			respondError(w, err, http.StatusNotFound)
+			return
+		}
+		respondJSON(w, pwh)
+	} else {
+		p, err := h.svc.GetByID(r.Context(), id)
+		if err != nil {
+			respondError(w, err, http.StatusNotFound)
+			return
+		}
+		respondJSON(w, p.ToResponse())
+	}
+}
+
+func (h *ProviderHandler) updateProvider(w http.ResponseWriter, r *http.Request, id string) {
+	var p provider.Provider
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		respondError(w, err, http.StatusBadRequest)
 		return
 	}
 
-	statuses := h.healthChecker.GetAllHealthStatus()
-	respondJSON(w, map[string]interface{}{
-		"health_status": statuses,
-		"count":         len(statuses),
-	})
+	p.ID = id
+	if err := h.svc.Update(r.Context(), &p); err != nil {
+		respondError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("Provider updated", slog.String("id", p.ID), slog.String("name", p.Name))
+	respondJSON(w, p.ToResponse())
+}
+
+func (h *ProviderHandler) deleteProvider(w http.ResponseWriter, r *http.Request, id string) {
+	if err := h.svc.Delete(r.Context(), id); err != nil {
+		respondError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("Provider deleted", slog.String("id", id))
+	respondJSON(w, map[string]bool{"deleted": true})
+}
+
+func (h *ProviderHandler) getProviderHealth(w http.ResponseWriter, r *http.Request, id string) {
+	health, err := h.svc.GetWithHealth(r.Context(), id)
+	if err != nil {
+		respondError(w, err, http.StatusNotFound)
+		return
+	}
+
+	respondJSON(w, health.Health)
+}
+
+func (h *ProviderHandler) checkProviderHealth(w http.ResponseWriter, r *http.Request, id string) {
+	health, err := h.svc.CheckHealth(r.Context(), id)
+	if err != nil {
+		respondError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, health)
 }
 
 // extractProviderID extracts the provider ID from the URL path
 func extractProviderID(path string) string {
-	// Expected format: /v1/providers/{id} or /v1/providers/{id}/health
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) >= 3 {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) >= 3 && parts[0] == "v1" && parts[1] == "providers" {
 		return parts[2]
 	}
 	return ""
