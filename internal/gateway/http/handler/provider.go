@@ -10,13 +10,19 @@ import (
 )
 
 // NewProviderHandler creates a handler for provider endpoints
-func NewProviderHandler(svc *provider.Service) *ProviderHandler {
-	return &ProviderHandler{svc: svc}
+func NewProviderHandler(svc *provider.Service, healthChecker *provider.HealthChecker, selector *provider.ProviderSelector) *ProviderHandler {
+	return &ProviderHandler{
+		svc:              svc,
+		healthChecker:    healthChecker,
+		providerSelector: selector,
+	}
 }
 
 // ProviderHandler handles provider CRUD endpoints
 type ProviderHandler struct {
-	svc *provider.Service
+	svc              *provider.Service
+	healthChecker    *provider.HealthChecker
+	providerSelector *provider.ProviderSelector
 }
 
 // HandleProviders handles /v1/providers
@@ -39,6 +45,12 @@ func (h *ProviderHandler) HandleProvider(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Handle /v1/providers/health specially
+	if id == "health" {
+		h.HandleAllProviderHealth(w, r)
+		return
+	}
+
 	switch r.Method {
 	case "GET":
 		h.getProvider(w, r, id)
@@ -49,6 +61,22 @@ func (h *ProviderHandler) HandleProvider(w http.ResponseWriter, r *http.Request)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// HandleAllProviderHealth handles /v1/providers/health
+func (h *ProviderHandler) HandleAllProviderHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.healthChecker == nil {
+		http.Error(w, `{"error": "health checker not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	status := h.healthChecker.GetAllHealthStatus()
+	respondJSON(w, status)
 }
 
 // HandleProviderHealth handles /v1/providers/{id}/health
@@ -64,8 +92,6 @@ func (h *ProviderHandler) HandleProviderHealth(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// GET: Return cached health status
-	// POST: Perform new health check
 	if r.Method == "GET" {
 		h.getProviderHealth(w, r, id)
 	} else {
@@ -77,6 +103,11 @@ func (h *ProviderHandler) HandleProviderHealth(w http.ResponseWriter, r *http.Re
 func (h *ProviderHandler) HandleProviderSelect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if h.providerSelector == nil || h.svc == nil {
+		http.Error(w, `{"error": "selector not available"}`, http.StatusServiceUnavailable)
 		return
 	}
 
@@ -93,7 +124,6 @@ func (h *ProviderHandler) HandleProviderSelect(w http.ResponseWriter, r *http.Re
 func (h *ProviderHandler) listProviders(w http.ResponseWriter, r *http.Request) {
 	filter := &provider.ProviderFilter{}
 
-	// Parse query parameters
 	if providerType := r.URL.Query().Get("type"); providerType != "" {
 		filter.Type = provider.ProviderType(providerType)
 	}
@@ -122,7 +152,6 @@ func (h *ProviderHandler) listProviders(w http.ResponseWriter, r *http.Request) 
 			respondError(w, listErr, http.StatusInternalServerError)
 			return
 		}
-		// Convert to response format (mask credentials)
 		response := make([]*provider.ProviderResponse, len(providers))
 		for i, p := range providers {
 			response[i] = p.ToResponse()
@@ -217,7 +246,6 @@ func (h *ProviderHandler) checkProviderHealth(w http.ResponseWriter, r *http.Req
 }
 
 // extractProviderID extracts the provider ID from the URL path
-// URL format: /v1/providers/{id}
 func extractProviderID(path string) string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) >= 3 && parts[0] == "v1" && parts[1] == "providers" {

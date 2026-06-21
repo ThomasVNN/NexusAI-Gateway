@@ -116,6 +116,10 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	var providerService *provider.Service
 	var providerHandler *handler.ProviderHandler
 
+	// Provider health and rotation (NX-24)
+	var healthChecker *provider.HealthChecker
+	var providerSelector *provider.ProviderSelector
+
 	if isDbHealthy {
 		// Channel management
 		chRepo := channel.NewRepository(db.DB)
@@ -137,16 +141,21 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		billingRepo := billing.NewRepository(db.DB)
 		billingService = billing.NewService(billingRepo)
 
-		// Provider management (NX-204)
+		// Provider management (NX-204 + NX-24)
 		providerRepo := provider.NewRepository(db.DB)
 		providerService = provider.NewService(providerRepo)
-		providerHandler = handler.NewProviderHandler(providerService)
+
+		// Provider health checker and selector (NX-24)
+		healthConfig := provider.DefaultHealthCheckConfig()
+		healthChecker = provider.NewHealthChecker(healthConfig)
+		providerSelector = provider.NewProviderSelector(healthChecker, provider.PriorityBased, nil)
+
+		// Provider handler with CRUD + health (NX-204 + NX-24)
+		providerHandler = handler.NewProviderHandler(providerService, healthChecker, providerSelector)
 
 		// Initialize API handler with all services
 		apiHandler = handler.NewAPIHandler(chService, tgService, uService, logService, billingService)
 	}
-
-	// OpenAI endpoints
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
 	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
 
@@ -210,6 +219,15 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		// Billing Endpoints
 		mux.HandleFunc("/api/billing", apiHandler.HandleBilling)
 		mux.HandleFunc("/api/billing/pricing", apiHandler.HandleBillingPricing)
+	}
+
+	// Provider Health & Rotation Endpoints (NX-24)
+	// DEPENDENCY: Requires NX-204 (Provider Registry) to be merged first
+	if providerHandler != nil {
+		mux.HandleFunc("/v1/providers", providerHandler.HandleProviders)
+		mux.HandleFunc("/v1/providers/", providerHandler.HandleProvider)
+		mux.HandleFunc("/v1/providers/select", providerHandler.HandleProviderSelect)
+		mux.HandleFunc("/v1/providers/health", providerHandler.HandleAllProviderHealth)
 	}
 
 	// Diagnostics & Observability endpoints
