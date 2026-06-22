@@ -2,7 +2,7 @@
 
 > **Bounded Context:** `Gateway` · **Primary Owner:** Dev Agent · **Supporting:** SA Agent, AI Agent, Platform Agent
 > **Repository Role:** Runtime service · **Product Status:** Standalone product · **Version:** 2.x
-> **Backlog & Status:** [Tasks Backlog](https://app.notion.com/p/c3b268b26842457a93fbad7fc5b1b710?pvs=1) · [SDLC V3 Control Center](https://app.notion.com/p/3843b1d5683e816c8899debb443e33c5?pvs=1)
+> **Backlog:** PostgreSQL · **Status:** [NexusAI Governance](../docs/governance/README.md)
 
 The single ingress point for every AI request in the NexusAI ecosystem. NexusAI-Gateway authenticates callers, enforces policy, redacts PII, routes to upstream models, and exposes an MCP transport for agent tooling. It is the only context in the platform that talks directly to external model providers.
 
