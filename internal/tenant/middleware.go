@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/tenancy"
 )
 
 // Middleware extracts tenant context from incoming requests and injects it into the context.
 type Middleware struct {
-	resolver TenantResolver
+	resolver tenancy.TenantResolver
 	header   string
 	param    string
 	allowNil bool
@@ -38,7 +40,7 @@ func AllowNil() MiddlewareOption {
 }
 
 // NewMiddleware creates a tenant extraction middleware using the provided resolver.
-func NewMiddleware(resolver TenantResolver, opts ...MiddlewareOption) *Middleware {
+func NewMiddleware(resolver tenancy.TenantResolver, opts ...MiddlewareOption) *Middleware {
 	m := &Middleware{
 		resolver: resolver,
 		header:   "X-Tenant-ID",
@@ -73,11 +75,12 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		tenant, err := m.resolver.Resolve(ctx, identifier)
 		if err != nil {
 			if m.allowNil {
-				tenant = &Tenant{
+				tenant = &tenancy.Tenant{
 					ID:     "default",
 					Slug:   "default",
 					Status: "active",
 					Plan:   "standard",
+					IsActive: true,
 				}
 			} else {
 				http.Error(w, `{"error":"tenant not found"}`, http.StatusUnauthorized)
@@ -92,7 +95,7 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		}
 
 		// Inject tenant into context
-		ctx = WithTenant(ctx, tenant)
+		ctx = tenancy.WithTenant(ctx, tenant)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -165,7 +168,7 @@ func (f *QueryFilter) FilterQuery(query, tenantID string) (string, error) {
 
 // Isolate creates a scoped context from a standard context.
 func Isolate(ctx context.Context) ScopedContext {
-	tenant, err := GetTenant(ctx)
+	tenant, err := tenancy.GetTenant(ctx)
 	if err != nil {
 		return ScopedContext{}
 	}

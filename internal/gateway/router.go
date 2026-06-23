@@ -7,7 +7,6 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 

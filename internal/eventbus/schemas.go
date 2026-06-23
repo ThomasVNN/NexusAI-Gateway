@@ -26,6 +26,7 @@ type SchemaField struct {
 	MinLength   *int     `json:"minLength,omitempty"`
 	MaxLength   *int     `json:"maxLength,omitempty"`
 	Pattern     string   `json:"pattern,omitempty"`
+	Items       *SchemaField `json:"items,omitempty"`
 }
 
 // Well-known event schemas
@@ -298,9 +299,6 @@ func GetAllSchemaVersions() map[string]string {
 	}
 	return versions
 }
-
-// SchemaField references the SchemaField type for Items
-var Items = &SchemaField{Type: "string"}
 
 // Helper functions
 func intPtr(i int) *int {

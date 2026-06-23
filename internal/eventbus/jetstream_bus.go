@@ -12,34 +12,22 @@ import (
 
 // JetStreamConfig holds NATS JetStream-specific configuration
 type JetStreamConfig struct {
-	StreamName      string
-	Subject         string
-	ConsumerName    string
-	MaxBytes        int64
-	MaxAge          time.Duration
-	Storage         jetstream.StorageType
-	Replicas        int
-	Retention       jetstream.RetentionPolicy
-	Duplicates      time.Duration
+	StreamName   string
+	Subject      string
+	ConsumerName string
+	MaxBytes     int64
+	MaxAge       time.Duration
+	Storage      jetstream.StorageType
+	Replicas     int
+	Retention    jetstream.RetentionPolicy
+	Duplicates   time.Duration
 }
 
 // jetStreamBus implements event publishing with JetStream persistence
 type jetStreamBus struct {
 	*natsBus
-	js        jetstream.JetStream
-	jsConfig  *JetStreamConfig
-	jsContext jetstream.Context
-}
-
-// JetStreamOption is a functional option for JetStream configuration
-type JetStreamOption func(*jetStreamBus) error
-
-// WithJetStreamConfig sets the JetStream configuration
-func WithJetStreamConfig(cfg *JetStreamConfig) JetStreamOption {
-	return func(b *jetStreamBus) error {
-		b.jsConfig = cfg
-		return nil
-	}
+	js       jetstream.JetStream
+	jsConfig *JetStreamConfig
 }
 
 // NewJetStreamBus creates a new event bus backed by NATS JetStream
@@ -51,13 +39,13 @@ func NewJetStreamBus(ctx context.Context, cfg *BusConfig, opts ...NATSOption) (B
 	}
 
 	jsBus := &jetStreamBus{
-		natsBus:  natsBusInstance.(*natsBus),
+		natsBus: natsBusInstance.(*natsBus),
 		jsConfig: &JetStreamConfig{
 			StreamName:   "nexusai-events",
 			Subject:      "events.>",
 			ConsumerName: "nexusai-consumer",
 			MaxBytes:     1 * 1024 * 1024 * 1024, // 1GB
-			MaxAge:       7 * 24 * time.Hour,      // 7 days
+			MaxAge:       7 * 24 * time.Hour,     // 7 days
 			Storage:      jetstream.FileStorage,
 			Replicas:     1,
 			Retention:    jetstream.InterestPolicy,
@@ -65,24 +53,8 @@ func NewJetStreamBus(ctx context.Context, cfg *BusConfig, opts ...NATSOption) (B
 		},
 	}
 
-	// Apply options
-	for _, opt := range opts {
-		if jsOpt, ok := opt.(func(*natsBus) error); ok {
-			// Skip NATS options for JetStream bus
-		}
-	}
-
-	// Override with JetStream-specific options
-	for _, opt := range opts {
-		if jsOpt, ok := any(opt).(JetStreamOption); ok {
-			if err := jsOpt(jsBus); err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	// Initialize JetStream
-	if err := jsBus.initializeJetStream(ctx); err != nil {
+	if err := jsBus.initJetStream(ctx); err != nil {
 		jsBus.logger.Warn("JetStream initialization failed, falling back to core NATS",
 			slog.String("error", err.Error()))
 		return jsBus.natsBus, nil
@@ -96,23 +68,22 @@ func NewJetStreamBus(ctx context.Context, cfg *BusConfig, opts ...NATSOption) (B
 	return jsBus, nil
 }
 
-// initializeJetStream sets up JetStream stream and consumer
-func (b *jetStreamBus) initializeJetStream(ctx context.Context) error {
+// initJetStream sets up JetStream stream and consumer
+func (b *jetStreamBus) initJetStream(ctx context.Context) error {
 	if b.conn == nil {
 		return fmt.Errorf("NATS connection is required")
 	}
 
-	var err error
-	b.jsContext, err = jetstream.New(b.conn)
+	jsContext, err := jetstream.New(b.conn)
 	if err != nil {
 		return fmt.Errorf("failed to create JetStream context: %w", err)
 	}
 
 	// Create stream if it doesn't exist
-	stream, err := b.jsContext.Stream(ctx, b.jsConfig.StreamName)
+	_, err = jsContext.Stream(ctx, b.jsConfig.StreamName)
 	if err != nil {
 		// Stream doesn't exist, create it
-		_, err = b.jsContext.CreateStream(ctx, jetstream.StreamConfig{
+		_, err = jsContext.CreateStream(ctx, jetstream.StreamConfig{
 			Name:        b.jsConfig.StreamName,
 			Subjects:    []string{b.jsConfig.Subject},
 			MaxBytes:    b.jsConfig.MaxBytes,
@@ -130,16 +101,16 @@ func (b *jetStreamBus) initializeJetStream(ctx context.Context) error {
 			slog.String("stream", b.jsConfig.StreamName))
 	}
 
-	b.js = b.jsContext
+	b.js = jsContext
 
 	// Create consumer if it doesn't exist
-	_, err = b.jsContext.CreateOrUpdateConsumer(ctx, b.jsConfig.StreamName, jetstream.ConsumerConfig{
-		Name:         b.jsConfig.ConsumerName,
-		Durable:      b.jsConfig.ConsumerName,
-		FilterSubject: b.jsConfig.Subject,
-		AckPolicy:    jetstream.AckExplicitPolicy,
-		AckWait:      30 * time.Second,
-		MaxDeliver:   3,
+	_, err = b.js.CreateOrUpdateConsumer(ctx, b.jsConfig.StreamName, jetstream.ConsumerConfig{
+		Name:          b.jsConfig.ConsumerName,
+		Durable:       b.jsConfig.ConsumerName,
+		FilterSubject:  b.jsConfig.Subject,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       30 * time.Second,
+		MaxDeliver:    3,
 		DeliverPolicy: jetstream.DeliverNewPolicy,
 	})
 	if err != nil {
@@ -212,7 +183,7 @@ func (b *jetStreamBus) Publish(ctx context.Context, event *Event) error {
 }
 
 // GetStreamInfo returns information about the JetStream stream
-func (b *jetStreamBus) GetStreamInfo(ctx context.Context) (*jetstream.StreamInfo, error) {
+func (b *jetStreamBus) GetStreamInfo(ctx context.Context) (jetstream.Stream, error) {
 	if b.js == nil {
 		return nil, fmt.Errorf("JetStream is not initialized")
 	}

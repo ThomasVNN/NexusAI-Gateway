@@ -10,13 +10,13 @@ import (
 // CircuitBreakerMetrics holds Prometheus metrics for circuit breakers
 type CircuitBreakerMetrics struct {
 	// Circuit breaker state metrics
-	CircuitState     *prometheus.GaugeVec
+	CircuitState       *prometheus.GaugeVec
 	CircuitTransitions *prometheus.CounterVec
-	CircuitRequests  *prometheus.CounterVec
-	CircuitDuration  *prometheus.HistogramVec
-	CircuitFailures  *prometheus.CounterVec
-	CircuitSuccesses *prometheus.CounterVec
-	CircuitRejects  *prometheus.CounterVec
+	CircuitRequests    *prometheus.CounterVec
+	CircuitDuration    *prometheus.HistogramVec
+	CircuitFailures    *prometheus.CounterVec
+	CircuitSuccesses   *prometheus.CounterVec
+	CircuitRejects     *prometheus.CounterVec
 
 	// Bulkhead metrics
 	BulkheadInFlight *prometheus.GaugeVec
@@ -217,7 +217,7 @@ func (cb *InstrumentedProviderCB) Allow() bool {
 	allowed := cb.ProviderCB.Allow()
 	cb.metrics.RecordRequest(cb.ProviderID, allowed)
 	if !allowed {
-		cb.metrics.RecordReject(cb.ProviderCB, "circuit_open")
+		cb.metrics.RecordReject(cb.ProviderID, "circuit_open")
 	}
 	return allowed
 }
@@ -226,11 +226,11 @@ func (cb *InstrumentedProviderCB) Allow() bool {
 func (cb *InstrumentedProviderCB) RecordSuccess() {
 	prevState := cb.ProviderCB.GetState()
 	cb.ProviderCB.RecordSuccess()
-	cb.metrics.RecordSuccess(cb.ProviderCB)
-	
+	cb.metrics.RecordSuccess(cb.ProviderID)
+
 	newState := cb.ProviderCB.GetState()
 	if prevState != newState {
-		cb.metrics.RecordStateChange(cb.ProviderCB, prevState, newState)
+		cb.metrics.RecordStateChange(cb.ProviderID, prevState, newState)
 	}
 }
 
@@ -238,11 +238,11 @@ func (cb *InstrumentedProviderCB) RecordSuccess() {
 func (cb *InstrumentedProviderCB) RecordFailure() {
 	prevState := cb.ProviderCB.GetState()
 	cb.ProviderCB.RecordFailure()
-	cb.metrics.RecordFailure(cb.ProviderCB, "provider_error")
-	
+	cb.metrics.RecordFailure(cb.ProviderID, "provider_error")
+
 	newState := cb.ProviderCB.GetState()
 	if prevState != newState {
-		cb.metrics.RecordStateChange(cb.ProviderCB, prevState, newState)
+		cb.metrics.RecordStateChange(cb.ProviderID, prevState, newState)
 	}
 }
 
@@ -264,7 +264,7 @@ func NewInstrumentedThreeLayerResilience() *InstrumentedThreeLayerResilience {
 func (t *InstrumentedThreeLayerResilience) GetProviderCB(providerID string) *InstrumentedProviderCB {
 	// First get or create the underlying CB
 	innerCB := t.ThreeLayerResilience.GetProviderCB(providerID)
-	
+
 	// Wrap with instrumentation
 	return &InstrumentedProviderCB{
 		ProviderCB: innerCB,
@@ -276,15 +276,15 @@ func (t *InstrumentedThreeLayerResilience) GetProviderCB(providerID string) *Ins
 func (t *InstrumentedThreeLayerResilience) GetAllStatsWithMetrics() []*CBStatsWithMetrics {
 	innerStats := t.ThreeLayerResilience.GetAllStats()
 	result := make([]*CBStatsWithMetrics, len(innerStats))
-	
+
 	for i, stat := range innerStats {
 		result[i] = &CBStatsWithMetrics{
-			CBStats: stat,
+			CBStats:     stat,
 			FailureRate: calculateFailureRate(stat.TotalRequests, stat.TotalFailures),
 			SuccessRate: calculateFailureRate(stat.TotalRequests, stat.TotalSuccesses),
 		}
 	}
-	
+
 	return result
 }
 
@@ -305,7 +305,7 @@ func calculateFailureRate(total, failures int64) float64 {
 // MetricsCollector interface implementation for observability package integration
 func (m *CircuitBreakerMetrics) RecordCircuitBreaker(providerID string, state CBState, requests, failures, successes int64) {
 	m.updateStateGauge(providerID, state)
-	
+
 	if requests > 0 {
 		m.CircuitRequests.WithLabelValues(providerID, "total").Add(float64(requests))
 	}
