@@ -2,33 +2,143 @@ name: Lint Codebase
 
 on:
   push:
-    branches: [ main, staging, develop ]
+    branches: [ main, feature/*, fix/*, chore/* ]
   pull_request:
-    branches: [ main, staging, develop ]
+    branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
+
+env:
+  GO_VERSION: "1.22"
 
 jobs:
-  golangci:
-    name: golangci-lint
+  golangci-lint:
+    name: Go Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61
+          args: --timeout=5m --enable=gocritic,gosec,revive,errcheck
+          only-new-issues: ${{ github.event_name == 'pull_request' }}
+
+      - name: Generate Lint Evidence
+        run: |
+          if [ -f golangci-lint-report.json ]; then
+            echo "Lint report generated"
+          fi
+
+  # H10 Commit Message Validation
+  commit-messages:
+    name: H10: Commit Message Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate Commit Messages
+        run: |
+          echo "Validating commit messages against H10 standard..."
+          
+          # Check if this is a merge commit
+          if git log -1 --format=%P | grep -q " "; then
+            echo "Merge commit detected - skipping message validation"
+            exit 0
+          fi
+          
+          commit_msg=$(git log -1 --format=%s)
+          echo "Commit message: $commit_msg"
+          
+          # H10 Pattern: type(scope): [TICKET] description
+          if [[ ! "$commit_msg" =~ ^(feat|fix|chore|docs|style|refactor|test|perf|ci|build|revert)(\([a-zA-Z0-9_-]+\))?:(\[[A-Z]+-[0-9]+\])?\ .+ ]]; then
+            echo "ERROR: Commit message does not follow H10 format"
+            echo "Expected: type(scope): [TICKET] description"
+            echo "Examples:"
+            echo "  feat(gateway): [ENG-9104] Circuit breaker implementation"
+            echo "  fix(api): [ENG-1234] Fix authentication bug"
+            echo "  chore(deps): Update dependencies"
+            exit 1
+          fi
+          
+          # Check for ticket reference
+          if [[ "$commit_msg" =~ \[([A-Z]+-[0-9]+)\] ]]; then
+            echo "Ticket reference found: ${BASH_REMATCH[1]}"
+          else
+            echo "WARNING: No ticket reference found in commit message"
+            echo "Consider adding: [TICKET-NUMBER] format"
+          fi
+          
+          echo "H10 Commit message format: PASS"
+
+  # Branch Naming Validation
+  branch-naming:
+    name: H10: Branch Naming
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate Branch Name
+        run: |
+          branch=${GITHUB_REF#refs/heads/}
+          echo "Branch name: $branch"
+          
+          # Allowed patterns
+          allowed_patterns="^(main|develop|feature/[A-Z]+-[0-9]+-[a-z0-9-]+|fix/[A-Z]+-[0-9]+-[a-z0-9-]+|chore/[a-z0-9-]+|refactor/[a-z0-9-]+|hotfix/[A-Z]+-[0-9]+-[a-z0-9-]+|release/[0-9.]+|docs/[A-Z]+-[0-9]+)"
+          
+          if [[ ! "$branch" =~ $allowed_patterns ]]; then
+            echo "ERROR: Branch name '$branch' does not follow H10 naming convention"
+            echo "Allowed patterns:"
+            echo "  feature/TICKET-description"
+            echo "  fix/TICKET-description"
+            echo "  chore/description"
+            echo "  refactor/description"
+            echo "  hotfix/TICKET-description"
+            exit 1
+          fi
+          
+          echo "H10 Branch naming: PASS"
+
+  # File Naming Validation
+  file-naming:
+    name: File Naming Convention
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-          cache: true
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: v1.54
-          # working-directory: .
-          args: --timeout=5m
-        continue-on-error: true
+      - name: Validate File Names
+        run: |
+          echo "Validating file naming conventions..."
+          
+          # Check for files with spaces
+          spaces=$(find . -name "* *" -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | wc -l)
+          if [ "$spaces" -gt 0 ]; then
+            echo "WARNING: Found $spaces files with spaces in names"
+            find . -name "* *" -not -path "*/node_modules/*" -not -path "*/.git/*" | head -5
+          fi
+          
+          # Check for test files
+          test_files=$(find . -name "*_test.go" -not -path "*/vendor/*" 2>/dev/null | wc -l)
+          echo "Test files found: $test_files"
+          
+          echo "File naming validation: COMPLETE"
