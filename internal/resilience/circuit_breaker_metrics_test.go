@@ -1,6 +1,7 @@
 package resilience
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -11,7 +12,7 @@ import (
 func TestCircuitBreakerMetrics_Creation(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce{}
+	cbMetricsOnce = sync.Once{}
 
 	// Create new metrics
 	metrics := NewCircuitBreakerMetrics("test")
@@ -32,7 +33,7 @@ func TestCircuitBreakerMetrics_Creation(t *testing.T) {
 func TestCircuitBreakerMetrics_GlobalInstance(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce{}
+	cbMetricsOnce = sync.Once{}
 
 	// Get global instance
 	metrics1 := GetGlobalCBMetrics()
@@ -44,7 +45,7 @@ func TestCircuitBreakerMetrics_GlobalInstance(t *testing.T) {
 func TestCircuitBreakerMetrics_RecordStateChange(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce{}
+	cbMetricsOnce = sync.Once{}
 
 	metrics := GetGlobalCBMetrics()
 	providerID := "test-provider"
@@ -72,7 +73,7 @@ func TestCircuitBreakerMetrics_RecordStateChange(t *testing.T) {
 func TestCircuitBreakerMetrics_RecordRequest(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce{}
+	cbMetricsOnce = sync.Once{}
 
 	metrics := GetGlobalCBMetrics()
 	providerID := "test-provider"
@@ -88,7 +89,6 @@ func TestCircuitBreakerMetrics_RecordRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, counter)
 
-	var allowedValue float64
 	ch := make(chan prometheus.Metric, 1)
 	counter.Collect(ch)
 	m := <-ch
@@ -100,7 +100,7 @@ func TestCircuitBreakerMetrics_RecordRequest(t *testing.T) {
 func TestCircuitBreakerMetrics_RecordFailure(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce{}
+	cbMetricsOnce = sync.Once{}
 
 	metrics := GetGlobalCBMetrics()
 	providerID := "test-provider"
@@ -125,7 +125,7 @@ func TestCircuitBreakerMetrics_RecordFailure(t *testing.T) {
 func TestCircuitBreakerMetrics_RecordSuccess(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce{}
+	cbMetricsOnce = sync.Once{}
 
 	metrics := GetGlobalCBMetrics()
 	providerID := "test-provider"
@@ -150,7 +150,7 @@ func TestCircuitBreakerMetrics_RecordSuccess(t *testing.T) {
 func TestCircuitBreakerMetrics_RecordReject(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce{}
+	cbMetricsOnce = sync.Once{}
 
 	metrics := GetGlobalCBMetrics()
 	providerID := "test-provider"
@@ -174,7 +174,7 @@ func TestCircuitBreakerMetrics_RecordReject(t *testing.T) {
 func TestCircuitBreakerMetrics_UpdateStateGauge(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce{}
+	cbMetricsOnce = sync.Once{}
 
 	metrics := GetGlobalCBMetrics()
 	providerID := "test-provider"
@@ -207,7 +207,7 @@ func TestCircuitBreakerMetrics_UpdateStateGauge(t *testing.T) {
 func TestInstrumentedProviderCB_Allow(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce()
+	cbMetricsOnce = sync.Once{}
 
 	cb := NewInstrumentedProviderCB("test-provider")
 
@@ -226,7 +226,7 @@ func TestInstrumentedProviderCB_Allow(t *testing.T) {
 func TestInstrumentedProviderCB_RecordSuccess(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce()
+	cbMetricsOnce = sync.Once{}
 
 	cb := NewInstrumentedProviderCB("test-provider")
 
@@ -253,7 +253,7 @@ func TestInstrumentedProviderCB_RecordSuccess(t *testing.T) {
 func TestInstrumentedProviderCB_RecordFailure(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce()
+	cbMetricsOnce = sync.Once{}
 
 	cb := NewInstrumentedProviderCB("test-provider")
 
@@ -269,7 +269,7 @@ func TestInstrumentedProviderCB_RecordFailure(t *testing.T) {
 func TestInstrumentedThreeLayerResilience_GetProviderCB(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce()
+	cbMetricsOnce = sync.Once{}
 
 	resilience := NewInstrumentedThreeLayerResilience()
 
@@ -284,7 +284,7 @@ func TestInstrumentedThreeLayerResilience_GetProviderCB(t *testing.T) {
 func TestInstrumentedThreeLayerResilience_GetAllStatsWithMetrics(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce()
+	cbMetricsOnce = sync.Once{}
 
 	resilience := NewInstrumentedThreeLayerResilience()
 
@@ -342,7 +342,7 @@ func TestCalculateFailureRate(t *testing.T) {
 func TestCircuitBreakerMetrics_RecordCircuitBreaker(t *testing.T) {
 	// Reset global metrics for clean test
 	globalCBMetrics = nil
-	cbMetricsOnce = syncOnce()
+	cbMetricsOnce = sync.Once{}
 
 	metrics := GetGlobalCBMetrics()
 	providerID := "test-provider"
@@ -354,11 +354,4 @@ func TestCircuitBreakerMetrics_RecordCircuitBreaker(t *testing.T) {
 	counter, err := metrics.CircuitRequests.GetMetricWithLabelValues(providerID, "total")
 	require.NoError(t, err)
 	assert.NotNil(t, counter)
-}
-
-// syncOnce helper for testing
-type syncOnce struct{}
-
-func (s *syncOnce) Do(f func()) {
-	f()
 }

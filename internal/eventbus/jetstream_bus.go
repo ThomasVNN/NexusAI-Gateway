@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
