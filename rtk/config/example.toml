@@ -1,0 +1,96 @@
+# RTK Filter Configuration
+# Version 1.0
+
+version = "1.0"
+
+# Global settings
+[global]
+enabled = true
+default_action = "pass"
+log_level = "info"
+max_file_size = 10485760  # 10MB
+
+# Enable hot reload for config changes
+hot_reload = true
+
+# Filter definitions
+[[filter]]
+name = "error-detector"
+enabled = true
+priority = 100
+command_type = "any"
+patterns = ["error", "Error", "ERROR", "failed", "Failed", "FAILED"]
+
+[[filter.actions]]
+type = "optimize"
+key = "error_highlight"
+value = true
+
+[[filter.conditions]]
+field = "exit_code"
+operator = "ne"
+value = 0
+
+[[filter]]
+name = "large-output-handler"
+enabled = true
+priority = 50
+command_type = "any"
+
+[[filter.actions]]
+type = "optimize"
+key = "truncate_output"
+value = 4096
+
+[[filter.conditions]]
+field = "output_size"
+operator = "gt"
+value = 4096
+
+[[filter]]
+name = "slow-command-warning"
+enabled = true
+priority = 75
+command_type = "any"
+
+[[filter.actions]]
+type = "add"
+key = "warning"
+value = "slow command detected"
+
+[[filter.conditions]]
+field = "duration"
+operator = "gt"
+value = 5000
+
+[[filter]]
+name = "success-metric"
+enabled = true
+priority = 10
+command_type = "any"
+
+[[filter.actions]]
+type = "add"
+key = "success_metric"
+value = true
+
+[[filter.conditions]]
+field = "exit_code"
+operator = "eq"
+value = 0
+
+[[filter]]
+name = "docker-cleanup"
+enabled = true
+priority = 200
+command_type = "docker"
+
+[[filter.actions]]
+type = "replace"
+key = "cleanup"
+value = true
+
+[[filter.conditions]]
+field = "pattern"
+operator = "contains"
+value = "docker"

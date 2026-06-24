@@ -26,6 +26,7 @@ import (
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/tenancy"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/token"
 	"github.com/ThomasVNN/NexusAI-Gateway/internal/user"
+	"github.com/ThomasVNN/NexusAI-Gateway/internal/webhooks"
 )
 
 var startTime = time.Now()

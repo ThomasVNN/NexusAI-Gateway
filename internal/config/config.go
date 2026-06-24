@@ -35,6 +35,14 @@ type Config struct {
 	RateLimitPerMinute int
 	EnableBilling      bool
 	DefaultCurrency    string
+	// WebSocket configuration
+	EnableWebSocket     bool
+	WebSocketMaxConns   int
+	WebSocketPingSecs   int
+	WebSocketPongWaitSecs int
+	WebSocketWriteWaitSecs int
+	WebSocketReadBufSize  int
+	WebSocketWriteBufSize int
 }
 
 // UnsafeDefaults contains known unsafe default values for detection
@@ -144,6 +152,43 @@ func Load() *Config {
 		defaultCurrency = "USD"
 	}
 
+	// WebSocket configuration
+	enableWebSocket := os.Getenv("ENABLE_WEBSOCKET") == "true"
+	// Default enabled in development for streaming support
+	if appEnv == "development" || appEnv == "local" {
+		enableWebSocket = true
+	}
+
+	webSocketMaxConns, _ := strconv.Atoi(os.Getenv("WEBSOCKET_MAX_CONNS"))
+	if webSocketMaxConns == 0 {
+		webSocketMaxConns = 100
+	}
+
+	webSocketPingSecs, _ := strconv.Atoi(os.Getenv("WEBSOCKET_PING_SECS"))
+	if webSocketPingSecs == 0 {
+		webSocketPingSecs = 30
+	}
+
+	webSocketPongWaitSecs, _ := strconv.Atoi(os.Getenv("WEBSOCKET_PONG_WAIT_SECS"))
+	if webSocketPongWaitSecs == 0 {
+		webSocketPongWaitSecs = 60
+	}
+
+	webSocketWriteWaitSecs, _ := strconv.Atoi(os.Getenv("WEBSOCKET_WRITE_WAIT_SECS"))
+	if webSocketWriteWaitSecs == 0 {
+		webSocketWriteWaitSecs = 10
+	}
+
+	webSocketReadBufSize, _ := strconv.Atoi(os.Getenv("WEBSOCKET_READ_BUF_SIZE"))
+	if webSocketReadBufSize == 0 {
+		webSocketReadBufSize = 4096
+	}
+
+	webSocketWriteBufSize, _ := strconv.Atoi(os.Getenv("WEBSOCKET_WRITE_BUF_SIZE"))
+	if webSocketWriteBufSize == 0 {
+		webSocketWriteBufSize = 4096
+	}
+
 	return &Config{
 		Port:                  port,
 		PostgresURL:           postgresURL,
@@ -165,8 +210,15 @@ func Load() *Config {
 		CacheTTLSeconds:       cacheTTLSeconds,
 		EnableRateLimit:       enableRateLimit,
 		RateLimitPerMinute:    rateLimitPerMinute,
-		EnableBilling:         enableBilling,
-		DefaultCurrency:       defaultCurrency,
+		EnableBilling:           enableBilling,
+		DefaultCurrency:         defaultCurrency,
+		EnableWebSocket:         enableWebSocket,
+		WebSocketMaxConns:       webSocketMaxConns,
+		WebSocketPingSecs:       webSocketPingSecs,
+		WebSocketPongWaitSecs:   webSocketPongWaitSecs,
+		WebSocketWriteWaitSecs:  webSocketWriteWaitSecs,
+		WebSocketReadBufSize:    webSocketReadBufSize,
+		WebSocketWriteBufSize:   webSocketWriteBufSize,
 	}
 }
 
