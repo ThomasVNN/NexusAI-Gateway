@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 // SemanticConfig contains compression configuration
@@ -863,7 +862,7 @@ type Stats struct {
 }
 
 // CompressWithStats compresses and tracks statistics
-func (c *SemanticCompressor) CompressWithStats(ctx context.Context, text string) (*SemanticResult, *SemanticStats, error) {
+func (c *SemanticCompressor) CompressWithStats(ctx context.Context, text string) (*SemanticCompressionResult, *SemanticStats, error) {
 	result, err := c.Compress(ctx, text)
 	if err != nil {
 		return nil, nil, err
@@ -880,8 +879,8 @@ func (c *SemanticCompressor) CompressWithStats(ctx context.Context, text string)
 }
 
 // BatchCompress compresses multiple texts
-func (c *SemanticCompressor) BatchCompress(ctx context.Context, texts []string) ([]*SemanticResult, error) {
-	results := make([]*SemanticResult, 0, len(texts))
+func (c *SemanticCompressor) BatchCompress(ctx context.Context, texts []string) ([]*SemanticCompressionResult, error) {
+	results := make([]*SemanticCompressionResult, 0, len(texts))
 
 	for _, text := range texts {
 		result, err := c.Compress(ctx, text)
