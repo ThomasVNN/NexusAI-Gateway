@@ -157,6 +157,11 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		// Initialize API handler with all services
 		apiHandler = handler.NewAPIHandler(chService, tgService, uService, logService, billingService)
 	}
+
+	// 5. Initialize Webhook Receiver
+	webhookReceiver := webhooks.New(webhooks.DefaultConfig())
+	webhookReceiver.StartDeliveryWorker(context.Background())
+
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
 	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
 
@@ -230,6 +235,9 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 		mux.HandleFunc("/v1/providers/select", providerHandler.HandleProviderSelect)
 		mux.HandleFunc("/v1/providers/health", providerHandler.HandleAllProviderHealth)
 	}
+
+	// Webhook Endpoints
+	mux.HandleFunc("POST /api/webhooks/receive", webhookReceiver.HandleWebhook)
 
 	// Diagnostics & Observability endpoints
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {

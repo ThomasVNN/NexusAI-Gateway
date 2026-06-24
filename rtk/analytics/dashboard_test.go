@@ -12,12 +12,17 @@ import (
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite3", ":memory:")
+	// Use a shared in-memory connection with a specific URI to ensure state is visible
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&mode=memory")
+	require.NoError(t, err)
+
+	// Verify the connection works
+	err = db.Ping()
 	require.NoError(t, err)
 
 	// Create table
 	schema := `
-	CREATE TABLE command_records (
+	CREATE TABLE IF NOT EXISTS command_records (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,
 		workspace_id TEXT NOT NULL,
@@ -30,9 +35,9 @@ func setupTestDB(t *testing.T) *sql.DB {
 		success INTEGER NOT NULL DEFAULT 1,
 		timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
-	CREATE INDEX idx_timestamp ON command_records(timestamp);
-	CREATE INDEX idx_user_id ON command_records(user_id);
-	CREATE INDEX idx_command_type ON command_records(command_type);`
+	CREATE INDEX IF NOT EXISTS idx_timestamp ON command_records(timestamp);
+	CREATE INDEX IF NOT EXISTS idx_user_id ON command_records(user_id);
+	CREATE INDEX IF NOT EXISTS idx_command_type ON command_records(command_type);`
 
 	_, err = db.Exec(schema)
 	require.NoError(t, err)
@@ -415,6 +420,7 @@ func TestExportToCSV(t *testing.T) {
 	assert.Contains(t, csvStr, "csv2")
 	assert.Contains(t, csvStr, "git status")
 	assert.Contains(t, csvStr, "git diff")
+	assert.Contains(t, csvStr, "true")
 }
 
 func TestCalculateSinceTime(t *testing.T) {

@@ -158,7 +158,7 @@ func (s *AnalyticsService) GetSavingsByCommand(ctx context.Context, since time.T
 	query := `
 		SELECT command_type, COUNT(*), SUM(savings), COALESCE(AVG(savings), 0)
 		FROM command_records
-		WHERE timestamp >= $1
+		WHERE timestamp >= ?
 		GROUP BY command_type
 		ORDER BY SUM(savings) DESC`
 
@@ -186,12 +186,16 @@ func (s *AnalyticsService) GetSavingsByCommand(ctx context.Context, since time.T
 
 // GetSavingsByUser returns savings grouped by user
 func (s *AnalyticsService) GetSavingsByUser(ctx context.Context, since time.Time) ([]SavingsByUser, error) {
+	// Single query approach: get user stats with their top commands
 	query := `
-		SELECT user_id, SUM(savings), COUNT(*), ARRAY_AGG(DISTINCT command_type)
+		SELECT 
+			user_id, 
+			SUM(savings) as total_savings, 
+			COUNT(*) as cmd_count
 		FROM command_records
-		WHERE timestamp >= $1
+		WHERE timestamp >= ?
 		GROUP BY user_id
-		ORDER BY SUM(savings) DESC`
+		ORDER BY total_savings DESC`
 
 	rows, err := s.db.QueryContext(ctx, query, since)
 	if err != nil {
@@ -202,16 +206,15 @@ func (s *AnalyticsService) GetSavingsByUser(ctx context.Context, since time.Time
 	var results []SavingsByUser
 	for rows.Next() {
 		var sbu SavingsByUser
-		var topCmds []string
-		if err := rows.Scan(&sbu.UserID, &sbu.TotalSavings, &sbu.CommandCount, (*[]string)(&topCmds)); err != nil {
-			// Handle case where ARRAY_AGG returns NULL
-			if err2 := rows.Scan(&sbu.UserID, &sbu.TotalSavings, &sbu.CommandCount, nil); err2 != nil {
-				return nil, fmt.Errorf("failed to scan row: %w", err)
-			}
-			sbu.TopCommands = []string{}
-		} else {
-			sbu.TopCommands = topCmds
+		if err := rows.Scan(&sbu.UserID, &sbu.TotalSavings, &sbu.CommandCount); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
+		// Get top commands for this user using separate query
+		topCmds, err := s.getTopCommandsForUser(ctx, since, sbu.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get top commands for user %s: %w", sbu.UserID, err)
+		}
+		sbu.TopCommands = topCmds
 		results = append(results, sbu)
 	}
 
@@ -222,29 +225,45 @@ func (s *AnalyticsService) GetSavingsByUser(ctx context.Context, since time.Time
 	return results, nil
 }
 
+// getTopCommandsForUser gets top command types for a specific user
+func (s *AnalyticsService) getTopCommandsForUser(ctx context.Context, since time.Time, userID string) ([]string, error) {
+	query := `
+		SELECT command_type
+		FROM command_records
+		WHERE timestamp >= ? AND user_id = ?
+		GROUP BY command_type
+		ORDER BY COUNT(*) DESC
+		LIMIT 5`
+
+	rows, err := s.db.QueryContext(ctx, query, since, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var commands []string
+	for rows.Next() {
+		var cmdType string
+		if err := rows.Scan(&cmdType); err != nil {
+			return nil, err
+		}
+		commands = append(commands, cmdType)
+	}
+
+	return commands, rows.Err()
+}
+
 // GetTrends returns savings trends over time
 func (s *AnalyticsService) GetTrends(ctx context.Context, period string) ([]TimeSeriesPoint, error) {
 	since := calculateSinceTime(period)
 
-	// Determine bucket interval based on period
-	bucketInterval := "day"
-	switch period {
-	case "24h":
-		bucketInterval = "hour"
-	case "7d":
-		bucketInterval = "day"
-	case "30d":
-		bucketInterval = "day"
-	case "90d":
-		bucketInterval = "week"
-	}
-
-	query := fmt.Sprintf(`
-		SELECT date_trunc('%s', timestamp) as bucket, COALESCE(SUM(savings), 0)
+	// Group by date for trends
+	query := `
+		SELECT date(timestamp) as bucket, SUM(savings)
 		FROM command_records
-		WHERE timestamp >= $1
-		GROUP BY bucket
-		ORDER BY bucket`, bucketInterval)
+		WHERE timestamp >= ?
+		GROUP BY date(timestamp)
+		ORDER BY bucket`
 
 	rows, err := s.db.QueryContext(ctx, query, since)
 	if err != nil {
@@ -255,9 +274,12 @@ func (s *AnalyticsService) GetTrends(ctx context.Context, period string) ([]Time
 	var trends []TimeSeriesPoint
 	for rows.Next() {
 		var tsp TimeSeriesPoint
-		if err := rows.Scan(&tsp.Timestamp, &tsp.Value); err != nil {
+		var bucketStr string
+		if err := rows.Scan(&bucketStr, &tsp.Value); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
+		// Parse the date string
+		tsp.Timestamp, _ = time.Parse("2006-01-02", bucketStr)
 		trends = append(trends, tsp)
 	}
 
@@ -270,11 +292,11 @@ func (s *AnalyticsService) GetTrends(ctx context.Context, period string) ([]Time
 
 // CleanupOldRecords removes records older than retention period
 func (s *AnalyticsService) CleanupOldRecords(ctx context.Context) (int64, error) {
-	query := `
-		DELETE FROM command_records
-		WHERE timestamp < now() - ($1 || ' days')::INTERVAL`
+	cutoff := time.Now().AddDate(0, 0, -s.retentionDays)
 
-	result, err := s.db.ExecContext(ctx, query, s.retentionDays)
+	query := `DELETE FROM command_records WHERE timestamp < ?`
+
+	result, err := s.db.ExecContext(ctx, query, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("failed to cleanup old records: %w", err)
 	}
@@ -295,7 +317,7 @@ func (s *AnalyticsService) TopCommands(ctx context.Context, limit int) ([]Saving
 		WHERE savings > 0
 		GROUP BY command_type
 		ORDER BY COUNT(*) DESC
-		LIMIT $1`
+		LIMIT ?`
 
 	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
@@ -327,7 +349,7 @@ func (s *AnalyticsService) ExportToCSV(ctx context.Context, period string) ([]by
 		SELECT id, user_id, workspace_id, command, command_type,
 		       original_tokens, optimized_tokens, savings, execution_time_ms, success, timestamp
 		FROM command_records
-		WHERE timestamp >= $1
+		WHERE timestamp >= ?
 		ORDER BY timestamp DESC`
 
 	rows, err := s.db.QueryContext(ctx, query, since)
@@ -349,16 +371,23 @@ func (s *AnalyticsService) ExportToCSV(ctx context.Context, period string) ([]by
 	// Write rows
 	for rows.Next() {
 		var record CommandRecord
-		var successStr string
+		var execTimeMs int
+		var successInt int
 		if err := rows.Scan(
 			&record.ID, &record.UserID, &record.WorkspaceID,
 			&record.Command, &record.CommandType,
 			&record.OriginalTokens, &record.OptimizedTokens,
-			&record.Savings, &record.ExecutionTime, &successStr, &record.Timestamp,
+			&record.Savings, &execTimeMs, &successInt, &record.Timestamp,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
-		record.Success = successStr == "true"
+		record.Success = successInt == 1
+		record.ExecutionTime = time.Duration(execTimeMs) * time.Millisecond
+
+		successStr := "false"
+		if record.Success {
+			successStr = "true"
+		}
 
 		row := []string{
 			record.ID,
@@ -369,7 +398,7 @@ func (s *AnalyticsService) ExportToCSV(ctx context.Context, period string) ([]by
 			fmt.Sprintf("%d", record.OriginalTokens),
 			fmt.Sprintf("%d", record.OptimizedTokens),
 			fmt.Sprintf("%d", record.Savings),
-			fmt.Sprintf("%d", record.ExecutionTime),
+			fmt.Sprintf("%d", execTimeMs),
 			successStr,
 			record.Timestamp.Format(time.RFC3339),
 		}
@@ -398,11 +427,11 @@ func (s *AnalyticsService) getOverallSavings(ctx context.Context, since time.Tim
 			COALESCE(SUM(optimized_tokens), 0),
 			COALESCE(SUM(savings), 0),
 			CASE WHEN SUM(original_tokens) > 0
-			     THEN ROUND((SUM(savings)::NUMERIC / SUM(original_tokens)) * 100, 2)
+			     THEN ROUND((CAST(SUM(savings) AS REAL) / SUM(original_tokens)) * 100, 2)
 			     ELSE 0
 			END
 		FROM command_records
-		WHERE timestamp >= $1`
+		WHERE timestamp >= ?`
 
 	var ts TokenSavings
 	err := s.db.QueryRowContext(ctx, query, since).Scan(

@@ -21,22 +21,34 @@ type SemanticConfig struct {
 	Strategy       string  // "aggressive", "balanced", "conservative"
 }
 
-// CompressionResult contains compression results
-type CompressionResult struct {
-	Original        string
-	Compressed      string
-	OriginalTokens  int
+// SemanticResult contains semantic compression results
+type SemanticResult struct {
+	Original         string
+	Compressed       string
+	OriginalTokens   int
 	CompressedTokens int
-	Ratio           float64
-	Savings         int // bytes saved
-	Preserved       bool
+	Ratio            float64
+	Savings          int // bytes saved
+	Preserved        bool
 }
+
+// SemanticCompressionResult is the return type for semantic compression
+type SemanticCompressionResult = SemanticResult
 
 // SemanticCompressor provides semantic compression
 type SemanticCompressor struct {
 	config            SemanticConfig
 	preservedKeywords []string
 	seenNgrams        map[string]int
+	stats             *SemanticStats
+}
+
+// SemanticStats tracks compression statistics
+type SemanticStats struct {
+	TotalCompressed int64
+	TotalOriginal   int64
+	TotalSavings    int64
+	Operations      int64
 }
 
 // NewSemanticCompressor creates a new semantic compressor
@@ -57,19 +69,20 @@ func NewSemanticCompressor(config SemanticConfig) *SemanticCompressor {
 		config:            config,
 		preservedKeywords: []string{},
 		seenNgrams:        make(map[string]int),
+		stats:             &SemanticStats{},
 	}
 }
 
 // Compress compresses text while preserving meaning
-func (c *SemanticCompressor) Compress(ctx context.Context, text string) (*CompressionResult, error) {
+func (c *SemanticCompressor) Compress(ctx context.Context, text string) (*SemanticResult, error) {
 	if text == "" {
-		return &CompressionResult{
-			Original:       "",
-			Compressed:     "",
-			OriginalTokens: 0,
-			Ratio:         0,
-			Savings:       0,
-			Preserved:     true,
+		return &SemanticResult{
+			Original:        "",
+			Compressed:      "",
+			OriginalTokens:  0,
+			Ratio:          0,
+			Savings:        0,
+			Preserved:      true,
 		}, nil
 	}
 
@@ -77,14 +90,14 @@ func (c *SemanticCompressor) Compress(ctx context.Context, text string) (*Compre
 	
 	// Skip compression if below minimum tokens
 	if originalTokens < c.config.MinTokens {
-		return &CompressionResult{
-			Original:        text,
-			Compressed:      text,
-			OriginalTokens:  originalTokens,
+		return &SemanticResult{
+			Original:         text,
+			Compressed:       text,
+			OriginalTokens:   originalTokens,
 			CompressedTokens: originalTokens,
-			Ratio:          1.0,
-			Savings:        0,
-			Preserved:      true,
+			Ratio:           1.0,
+			Savings:         0,
+			Preserved:       true,
 		}, nil
 	}
 
@@ -135,7 +148,7 @@ func (c *SemanticCompressor) Compress(ctx context.Context, text string) (*Compre
 		savings = len(text) - len(result)
 	}
 	
-	return &CompressionResult{
+	return &SemanticResult{
 		Original:         text,
 		Compressed:       result,
 		OriginalTokens:   originalTokens,
@@ -850,26 +863,26 @@ type Stats struct {
 }
 
 // CompressWithStats compresses and tracks statistics
-func (c *SemanticCompressor) CompressWithStats(ctx context.Context, text string) (*CompressionResult, *Stats, error) {
+func (c *SemanticCompressor) CompressWithStats(ctx context.Context, text string) (*SemanticResult, *SemanticStats, error) {
 	result, err := c.Compress(ctx, text)
 	if err != nil {
 		return nil, nil, err
 	}
-	
-	stats := &Stats{
+
+	stats := &SemanticStats{
 		TotalOriginal:   int64(len(text)),
 		TotalCompressed: int64(len(result.Compressed)),
 		TotalSavings:    int64(result.Savings),
 		Operations:      1,
 	}
-	
+
 	return result, stats, nil
 }
 
 // BatchCompress compresses multiple texts
-func (c *SemanticCompressor) BatchCompress(ctx context.Context, texts []string) ([]*CompressionResult, error) {
-	results := make([]*CompressionResult, 0, len(texts))
-	
+func (c *SemanticCompressor) BatchCompress(ctx context.Context, texts []string) ([]*SemanticResult, error) {
+	results := make([]*SemanticResult, 0, len(texts))
+
 	for _, text := range texts {
 		result, err := c.Compress(ctx, text)
 		if err != nil {
@@ -996,15 +1009,15 @@ type CompressionMetrics struct {
 	SavingsPercent  float64
 }
 
-// ToMetrics converts a CompressionResult to CompressionMetrics
-func (r *CompressionResult) ToMetrics() CompressionMetrics {
+// ToMetrics converts a SemanticResult to CompressionMetrics
+func (r *SemanticResult) ToMetrics() CompressionMetrics {
 	return CompressionMetrics{
-		OriginalLen:      len(r.Original),
-		CompressedLen:   len(r.Compressed),
-		TokensOriginal:  r.OriginalTokens,
-		TokensCompressed: r.CompressedTokens,
-		Ratio:           r.Ratio,
-		SavingsPercent:  float64(r.Savings) / float64(len(r.Original)) * 100,
+		OriginalLen:       len(r.Original),
+		CompressedLen:     len(r.Compressed),
+		TokensOriginal:    r.OriginalTokens,
+		TokensCompressed:  r.CompressedTokens,
+		Ratio:             r.Ratio,
+		SavingsPercent:    float64(r.Savings) / float64(len(r.Original)) * 100,
 	}
 }
 
