@@ -110,7 +110,7 @@ type WebhookManager struct {
 	eventBuffer    chan *WebhookEvent
 	deliveryQueue  chan *DeliveryTask
 	maxBufferSize  int
-	httpClient     *HTTPClient
+	httpClient     HTTPClient
 }
 
 // HTTPClient is a simple HTTP client interface

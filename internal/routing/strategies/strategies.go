@@ -252,8 +252,8 @@ func max(a, b float64) float64 {
 }
 
 // Clamp clamps a value between min and max
-func clamp(val, min, max float64) float64 {
-	return max(min(val, max), min)
+func clamp(value, lo, hi float64) float64 {
+	return max(min(value, hi), lo)
 }
 
 // Ensure math is used

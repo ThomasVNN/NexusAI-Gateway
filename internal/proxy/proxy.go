@@ -3,9 +3,7 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"log/slog"
 	"math/rand"
 	"net"
 	"net/http"
@@ -400,9 +398,6 @@ func strip0x(s string) string {
 func (p *Proxy) CheckProxy(ctx context.Context) error {
 	start := time.Now()
 
-	// Determine dial function based on proxy type
-	var dialer func(network, addr string) (net.Conn, error)
-	
 	proxyAddr := fmt.Sprintf("%s:%d", p.Host, p.Port)
 	
 	switch p.Type {
@@ -562,4 +557,3 @@ func ParseProxyURL(proxyURL string) (*Proxy, error) {
 
 // Ensure types are used
 var _ = tls.Config{}
-var _ = x509.CertPool{}

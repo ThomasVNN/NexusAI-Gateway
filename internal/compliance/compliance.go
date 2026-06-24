@@ -493,7 +493,17 @@ func (al *AuditLogger) SetRetentionPolicy(policy *DataRetentionPolicy) {
 
 // Export exports audit logs for external systems
 func (al *AuditLogger) Export(ctx context.Context, req *ExportRequest) ([]*AuditEntry, error) {
-	entries, err := al.Query(ctx, req.AuditQuery)
+	query := &AuditQuery{
+		OrgID:        req.OrgID,
+		EventType:    req.EventType,
+		UserID:       req.UserID,
+		ResourceType: req.ResourceType,
+		StartTime:    req.StartTime,
+		EndTime:      req.EndTime,
+		DataCategory: req.DataCategory,
+		Limit:        req.Limit,
+	}
+	entries, err := al.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +522,14 @@ func (al *AuditLogger) Export(ctx context.Context, req *ExportRequest) ([]*Audit
 
 // ExportRequest represents an export request
 type ExportRequest struct {
-	AuditQuery
+	OrgID        string             `json:"org_id"`
+	EventType    AuditEventType     `json:"event_type,omitempty"`
+	UserID       string             `json:"user_id,omitempty"`
+	ResourceType string             `json:"resource_type,omitempty"`
+	StartTime    time.Time          `json:"start_time,omitempty"`
+	EndTime      time.Time          `json:"end_time,omitempty"`
+	DataCategory string             `json:"data_category,omitempty"`
+	Limit        int                `json:"limit,omitempty"`
 	Format       string `json:"format"` // "json", "csv", "parquet"
 	Anonymize    bool   `json:"anonymize"`
 	Compress     bool   `json:"compress"`

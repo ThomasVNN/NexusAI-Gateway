@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"sync"
 	"time"
 )
 
@@ -575,7 +574,6 @@ func FullProviderCatalog() []*ExtendedProvider {
 
 	// Fill remaining with model variants and specialized
 	for i := 0; i < 30; i++ {
-		id := i + 1
 		providers = append(providers, &ExtendedProvider{
 			ID:           "model-variant-" + string(rune('a'+i)),
 			Name:         "Model Variant " + string(rune('A'+i)),

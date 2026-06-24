@@ -162,7 +162,19 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	webhookReceiver := webhooks.New(webhooks.DefaultConfig())
 	webhookReceiver.StartDeliveryWorker(context.Background())
 
+	// 5.1 Initialize WebSocket handler
+	var wsHandler *handler.WebSocketHandler
+	if cfg.EnableWebSocket {
+		wsConfig := handler.DefaultWebSocketConfig()
+		wsHandler = handler.NewWebSocketHandler(wsConfig)
+		slog.Info("WebSocket handler initialized",
+			slog.Int("max_connections", wsConfig.MaxConnections),
+			slog.Duration("ping_interval", wsConfig.PingInterval),
+		)
+	}
+
 	mux.HandleFunc("POST /v1/chat/completions", chatHandler.ServeHTTP)
+	mux.HandleFunc("GET /v1/chat/stream", wsHandler.ServeHTTP)
 	mux.HandleFunc("GET /v1/models", modelHandler.ServeHTTP)
 
 	// Model Context Protocol (MCP) Stream & Message Endpoints
@@ -230,9 +242,6 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	// Provider Health & Rotation Endpoints (NX-24)
 	// DEPENDENCY: Requires NX-204 (Provider Registry) to be merged first
 	if providerHandler != nil {
-		mux.HandleFunc("/v1/providers", providerHandler.HandleProviders)
-		mux.HandleFunc("/v1/providers/", providerHandler.HandleProvider)
-		mux.HandleFunc("/v1/providers/select", providerHandler.HandleProviderSelect)
 		mux.HandleFunc("/v1/providers/health", providerHandler.HandleAllProviderHealth)
 	}
 

@@ -31,4 +31,5 @@ logs/
 tmp/
 
 # Compiled binaries
-gateway
+/gateway
+/gateway.exe

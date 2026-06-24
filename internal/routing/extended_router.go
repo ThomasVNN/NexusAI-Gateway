@@ -9,12 +9,7 @@ import (
 
 // Extended routing strategies
 const (
-	// Base strategies
-	StrategyCostOptimized RoutingStrategy = "cost_optimized"
-	StrategyLatencyOptimized RoutingStrategy = "latency_optimized"
-	StrategyCapabilityOptimized RoutingStrategy = "capability_optimized"
-
-	// Extended strategies (9-14)
+	// Extended strategies
 	StrategyLeastLatency     RoutingStrategy = "least_latency"
 	StrategyCheapest         RoutingStrategy = "cheapest"
 	StrategyQualityFirst     RoutingStrategy = "quality_first"

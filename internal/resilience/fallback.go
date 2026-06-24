@@ -40,6 +40,7 @@ type Provider struct {
 	QuotaRemaining int64
 	QuotaLimit     int64
 	IsHealthy      bool
+	Priority       int // Lower = higher priority
 }
 
 // FallbackTier represents a tier in the fallback hierarchy
