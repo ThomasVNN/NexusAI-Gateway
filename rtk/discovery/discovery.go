@@ -475,6 +475,8 @@ func (l *CommandLexer) DetectOpportunities(cmd string) []Opportunity {
 		"--save-dev":         "-D",
 		"--save-prod":        "-P",
 		"--save-exact":       "-E",
+		"--short":            "-s", // git status --short
+		"--porcelain":        "",   // suggestion to use --short instead
 	}
 
 	for _, token := range tokens {
