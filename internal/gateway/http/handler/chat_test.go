@@ -136,7 +136,7 @@ func TestChatHandlerSuccess(t *testing.T) {
 		modelMock,
 	)
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor, nil)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -215,7 +215,7 @@ func TestChatHandlerQuotaExceeded(t *testing.T) {
 		&mockModelPlatform{},
 	)
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor, nil)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -263,7 +263,7 @@ func TestChatHandlerUnauthorized(t *testing.T) {
 		&mockModelPlatform{},
 	)
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor, nil)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -311,7 +311,7 @@ func TestChatHandlerDatabaseFailure(t *testing.T) {
 		&mockModelPlatform{},
 	)
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, true, pipelineExecutor)
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, true, pipelineExecutor, nil)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -367,7 +367,7 @@ func TestChatHandlerQuotaDatabaseFailure(t *testing.T) {
 		&mockModelPlatform{},
 	)
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor, nil)
 
 	payload := RequestPayload{
 		Model: "gpt-4",
@@ -429,7 +429,7 @@ func TestChatHandlerUpstreamProviderFailure(t *testing.T) {
 		modelMock,
 	)
 
-	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor)
+	handler := NewChatHandler(keyRepo, usageRepo, piiEngine, false, pipelineExecutor, nil)
 
 	payload := RequestPayload{
 		Model: "gpt-4",

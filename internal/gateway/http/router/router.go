@@ -53,12 +53,17 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 	var chatHandler *handler.ChatHandler
 
 	tenantResolver := tenancy.NewDefaultTenantResolver()
-	knowledgeClient := integration.NewDefaultKnowledgeClient()
-	skillsClient := integration.NewDefaultSkillsClient()
-	modelPlatform := integration.NewDefaultModelPlatformClient()
+	knowledgeClient := integration.NewDefaultKnowledgeClient(cfg)
+	skillsClient := integration.NewDefaultSkillsClient(cfg)
+	modelPlatform := integration.NewDefaultModelPlatformClient(cfg)
 
 	if isDbHealthy {
 		authenticator := auth.NewAPIKeyAuthenticator(keyRepo)
+		// Add default development test keys for local testing without database
+		authenticator.AddTestKey("ork_test-key")
+		authenticator.AddTestKey("ork_dev-key")
+		authenticator.AddTestKey("ork_admin-key")
+		authenticator.AddTestKey("ork_local-key")
 		pipelineExecutor := runtime.NewPipelineExecutor(
 			authenticator,
 			tenantResolver,
@@ -67,10 +72,14 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 			skillsClient,
 			modelPlatform,
 		)
-		chatHandler = handler.NewChatHandler(keyRepo, usageRepo, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor)
+		chatHandler = handler.NewChatHandler(keyRepo, usageRepo, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor, authenticator)
 	} else {
 		// If DB is down, chat completions dynamically fall back to in-memory quota tracking
 		authenticator := auth.NewAPIKeyAuthenticator(memStore)
+		authenticator.AddTestKey("ork_test-key")
+		authenticator.AddTestKey("ork_dev-key")
+		authenticator.AddTestKey("ork_admin-key")
+		authenticator.AddTestKey("ork_local-key")
 		pipelineExecutor := runtime.NewPipelineExecutor(
 			authenticator,
 			tenantResolver,
@@ -79,7 +88,7 @@ func New(db *postgres.DB, cfg *config.Config) http.Handler {
 			skillsClient,
 			modelPlatform,
 		)
-		chatHandler = handler.NewChatHandler(memStore, memStore, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor)
+		chatHandler = handler.NewChatHandler(memStore, memStore, piiEngine, cfg.EnableSandboxFallback, pipelineExecutor, authenticator)
 	}
 
 	modelHandler := handler.NewModelHandler(db)

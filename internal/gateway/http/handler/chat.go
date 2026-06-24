@@ -23,6 +23,7 @@ type ChatHandler struct {
 	piiEngine             *privacy.Engine
 	enableSandboxFallback bool
 	pipelineExecutor      *runtime.PipelineExecutor
+	authenticator         *auth.APIKeyAuthenticator
 }
 
 func NewChatHandler(
@@ -31,6 +32,7 @@ func NewChatHandler(
 	pe *privacy.Engine,
 	enableSandboxFallback bool,
 	pipelineExecutor *runtime.PipelineExecutor,
+	authenticator *auth.APIKeyAuthenticator,
 ) *ChatHandler {
 	return &ChatHandler{
 		keyRepo:               kr,
@@ -38,6 +40,7 @@ func NewChatHandler(
 		piiEngine:             pe,
 		enableSandboxFallback: enableSandboxFallback,
 		pipelineExecutor:      pipelineExecutor,
+		authenticator:         authenticator,
 	}
 }
 
@@ -79,51 +82,71 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	keyHash := auth.HashKey(rawKey)
-	key, err := h.keyRepo.GetByHash(r.Context(), keyHash)
-	if err != nil {
-		isNotFound := err == sql.ErrNoRows || err.Error() == "key not found by hash"
+	var key *model.RegisteredKey
+	isTestKey := h.authenticator != nil && h.authenticator.IsTestKeyAllowed(keyHash)
 
-		if isNotFound {
-			if h.enableSandboxFallback {
-				LogSecurityEvent(r, "WARN", "API key not found, using sandbox fallback key", "sandbox_fallback_activated", "key hash not found in datastore")
-				key = &model.RegisteredKey{
-					ID:          "mock-local-key",
-					KeyHash:     keyHash,
-					Name:        "Default Sandbox Key",
-					SourceApp:   "sandbox",
-					DailyQuota:  1000,
-					HourlyQuota: 200,
-					Active:      true,
+	// 1a. Check test key allowlist (for development without database)
+	if isTestKey {
+		LogSecurityEvent(r, "INFO", "Test key accepted via allowlist", "test_key_accepted", rawKey)
+		key = &model.RegisteredKey{
+			ID:          "test-key",
+			KeyHash:     keyHash,
+			Name:        "Test Development Key",
+			SourceApp:   "development",
+			DailyQuota:  100000,
+			HourlyQuota: 10000,
+			Active:      true,
+		}
+	} else {
+		// 1b. Normal database-backed authentication
+		key, err = h.keyRepo.GetByHash(r.Context(), keyHash)
+		if err != nil {
+			isNotFound := err == sql.ErrNoRows || err.Error() == "key not found by hash"
+
+			if isNotFound {
+				if h.enableSandboxFallback {
+					LogSecurityEvent(r, "WARN", "API key not found, using sandbox fallback key", "sandbox_fallback_activated", "key hash not found in datastore")
+					key = &model.RegisteredKey{
+						ID:          "mock-local-key",
+						KeyHash:     keyHash,
+						Name:        "Default Sandbox Key",
+						SourceApp:   "sandbox",
+						DailyQuota:  1000,
+						HourlyQuota: 200,
+						Active:      true,
+					}
+				} else {
+					LogSecurityEvent(r, "WARN", "Authentication failed: API key not found", "authentication_failed", "key hash not found in datastore")
+					WriteError(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", "Unauthorized: Invalid API key")
+					return
 				}
 			} else {
-				LogSecurityEvent(r, "WARN", "Authentication failed: API key not found", "authentication_failed", "key hash not found in datastore")
-				WriteError(w, http.StatusUnauthorized, "AUTHENTICATION_FAILED", "Unauthorized: Invalid API key")
+				LogSecurityEvent(r, "ERROR", "Authentication failed: Datastore unavailable", "datastore_failure", err.Error())
+				WriteError(w, http.StatusServiceUnavailable, "INFRASTRUCTURE_FAILURE", "Service Unavailable: Authentication datastore is currently offline")
 				return
 			}
-		} else {
-			LogSecurityEvent(r, "ERROR", "Authentication failed: Datastore unavailable", "datastore_failure", err.Error())
-			WriteError(w, http.StatusServiceUnavailable, "INFRASTRUCTURE_FAILURE", "Service Unavailable: Authentication datastore is currently offline")
+		}
+
+		if !key.Active {
+			LogSecurityEvent(r, "WARN", "Authorization failed: API key is deactivated", "authorization_failed", fmt.Sprintf("Key ID %s is deactivated", key.ID))
+			WriteError(w, http.StatusForbidden, "AUTHORIZATION_FAILED", "Forbidden: API key is deactivated")
 			return
 		}
 	}
 
-	if !key.Active {
-		LogSecurityEvent(r, "WARN", "Authorization failed: API key is deactivated", "authorization_failed", fmt.Sprintf("Key ID %s is deactivated", key.ID))
-		WriteError(w, http.StatusForbidden, "AUTHORIZATION_FAILED", "Forbidden: API key is deactivated")
-		return
-	}
-
-	// 2. Enforce Daily & Hourly Quotas
-	dailyUsage, err := h.usageRepo.GetDailyUsage(r.Context(), key.ID)
-	if err != nil {
-		LogSecurityEvent(r, "ERROR", "Quota verification failed: Datastore unavailable", "datastore_failure", err.Error())
-		WriteError(w, http.StatusServiceUnavailable, "INFRASTRUCTURE_FAILURE", "Service Unavailable: Quota check datastore is offline")
-		return
-	}
-	if dailyUsage >= key.DailyQuota {
-		LogSecurityEvent(r, "WARN", "Quota limit exceeded", "quota_exceeded", fmt.Sprintf("Key ID %s has daily usage %d / daily quota %d", key.ID, dailyUsage, key.DailyQuota))
-		WriteError(w, http.StatusTooManyRequests, "QUOTA_EXCEEDED", "Too Many Requests: Daily quota limit exceeded")
-		return
+	// 2. Enforce Daily & Hourly Quotas (skip for test keys)
+	if !isTestKey {
+		dailyUsage, err := h.usageRepo.GetDailyUsage(r.Context(), key.ID)
+		if err != nil {
+			LogSecurityEvent(r, "ERROR", "Quota verification failed: Datastore unavailable", "datastore_failure", err.Error())
+			WriteError(w, http.StatusServiceUnavailable, "INFRASTRUCTURE_FAILURE", "Service Unavailable: Quota check datastore is offline")
+			return
+		}
+		if dailyUsage >= key.DailyQuota {
+			LogSecurityEvent(r, "WARN", "Quota limit exceeded", "quota_exceeded", fmt.Sprintf("Key ID %s has daily usage %d / daily quota %d", key.ID, dailyUsage, key.DailyQuota))
+			WriteError(w, http.StatusTooManyRequests, "QUOTA_EXCEEDED", "Too Many Requests: Daily quota limit exceeded")
+			return
+		}
 	}
 
 	// 3. Classify Source App (placeholder - requires implementation)

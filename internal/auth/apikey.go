@@ -59,6 +59,15 @@ func (a *APIKeyAuthenticator) AddTestKey(testKey string) {
 	a.TestKeys[HashKey(testKey)] = true
 }
 
+// IsTestKeyAllowed returns true if the given key hash is in the test key allowlist.
+// Returns false if no test keys are configured.
+func (a *APIKeyAuthenticator) IsTestKeyAllowed(keyHash string) bool {
+	if len(a.TestKeys) == 0 {
+		return false
+	}
+	return a.TestKeys[keyHash]
+}
+
 // Authenticate verifies the token and returns the user identity
 func (a *APIKeyAuthenticator) Authenticate(ctx context.Context, token string) (*UserIdentity, error) {
 	rawKey, err := ParseKey(token)

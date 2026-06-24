@@ -21,6 +21,10 @@ type Config struct {
 	UpstreamAPIKey        string
 	EnableSandboxFallback bool
 	CORSAllowedOrigins    []string
+	// Service URLs — integration clients
+	KnowledgeServiceURL string
+	SkillsServiceURL    string
+	PlatformServiceURL  string
 	// Observability configuration
 	ObservabilityEnabled bool
 	OTLPEndpoint         string
@@ -36,13 +40,13 @@ type Config struct {
 	EnableBilling      bool
 	DefaultCurrency    string
 	// WebSocket configuration
-	EnableWebSocket     bool
-	WebSocketMaxConns   int
-	WebSocketPingSecs   int
-	WebSocketPongWaitSecs int
+	EnableWebSocket        bool
+	WebSocketMaxConns      int
+	WebSocketPingSecs      int
+	WebSocketPongWaitSecs  int
 	WebSocketWriteWaitSecs int
-	WebSocketReadBufSize  int
-	WebSocketWriteBufSize int
+	WebSocketReadBufSize   int
+	WebSocketWriteBufSize  int
 }
 
 // UnsafeDefaults contains known unsafe default values for detection
@@ -86,6 +90,20 @@ func Load() *Config {
 
 	upstreamAPIURL := os.Getenv("UPSTREAM_API_URL")
 	upstreamAPIKey := os.Getenv("UPSTREAM_API_KEY")
+
+	// Service URLs for integration clients (Knowledge, Skills, Model Platform)
+	knowledgeServiceURL := os.Getenv("KNOWLEDGE_SERVICE_URL")
+	if knowledgeServiceURL == "" {
+		knowledgeServiceURL = "http://nexusai-knowledge:8080"
+	}
+	skillsServiceURL := os.Getenv("SKILLS_SERVICE_URL")
+	if skillsServiceURL == "" {
+		skillsServiceURL = "http://nexusai-skills:8083"
+	}
+	platformServiceURL := os.Getenv("PLATFORM_SERVICE_URL")
+	if platformServiceURL == "" {
+		platformServiceURL = "http://nexusai-platform:8084"
+	}
 
 	// Enable sandbox fallback for local/development environments when DB is unavailable
 	enableSandboxFallback := os.Getenv("ENABLE_SANDBOX_FALLBACK") == "true"
@@ -190,35 +208,38 @@ func Load() *Config {
 	}
 
 	return &Config{
-		Port:                  port,
-		PostgresURL:           postgresURL,
-		RedisURL:              redisURL,
-		OIDCIssuer:            oidcIssuer,
-		InitialPassword:       initialPassword,
-		AppEnv:                appEnv,
-		UpstreamAPIURL:        upstreamAPIURL,
-		UpstreamAPIKey:        upstreamAPIKey,
-		EnableSandboxFallback: enableSandboxFallback,
-		CORSAllowedOrigins:    corsOrigins,
-		ObservabilityEnabled:  observabilityEnabled,
-		OTLPEndpoint:          otlpEndpoint,
-		OTELServiceName:       otelServiceName,
-		EnableRetry:           enableRetry,
-		MaxRetryCount:         maxRetryCount,
-		RetryBaseDelayMS:      retryBaseDelayMS,
-		EnableCache:           enableCache,
-		CacheTTLSeconds:       cacheTTLSeconds,
-		EnableRateLimit:       enableRateLimit,
-		RateLimitPerMinute:    rateLimitPerMinute,
-		EnableBilling:           enableBilling,
-		DefaultCurrency:         defaultCurrency,
-		EnableWebSocket:         enableWebSocket,
-		WebSocketMaxConns:       webSocketMaxConns,
-		WebSocketPingSecs:       webSocketPingSecs,
-		WebSocketPongWaitSecs:   webSocketPongWaitSecs,
-		WebSocketWriteWaitSecs:  webSocketWriteWaitSecs,
-		WebSocketReadBufSize:    webSocketReadBufSize,
-		WebSocketWriteBufSize:   webSocketWriteBufSize,
+		Port:                   port,
+		PostgresURL:            postgresURL,
+		RedisURL:               redisURL,
+		OIDCIssuer:             oidcIssuer,
+		InitialPassword:        initialPassword,
+		AppEnv:                 appEnv,
+		UpstreamAPIURL:         upstreamAPIURL,
+		UpstreamAPIKey:         upstreamAPIKey,
+		EnableSandboxFallback:  enableSandboxFallback,
+		CORSAllowedOrigins:     corsOrigins,
+		KnowledgeServiceURL:    knowledgeServiceURL,
+		SkillsServiceURL:       skillsServiceURL,
+		PlatformServiceURL:     platformServiceURL,
+		ObservabilityEnabled:   observabilityEnabled,
+		OTLPEndpoint:           otlpEndpoint,
+		OTELServiceName:        otelServiceName,
+		EnableRetry:            enableRetry,
+		MaxRetryCount:          maxRetryCount,
+		RetryBaseDelayMS:       retryBaseDelayMS,
+		EnableCache:            enableCache,
+		CacheTTLSeconds:        cacheTTLSeconds,
+		EnableRateLimit:        enableRateLimit,
+		RateLimitPerMinute:     rateLimitPerMinute,
+		EnableBilling:          enableBilling,
+		DefaultCurrency:        defaultCurrency,
+		EnableWebSocket:        enableWebSocket,
+		WebSocketMaxConns:      webSocketMaxConns,
+		WebSocketPingSecs:      webSocketPingSecs,
+		WebSocketPongWaitSecs:  webSocketPongWaitSecs,
+		WebSocketWriteWaitSecs: webSocketWriteWaitSecs,
+		WebSocketReadBufSize:   webSocketReadBufSize,
+		WebSocketWriteBufSize:  webSocketWriteBufSize,
 	}
 }
 
