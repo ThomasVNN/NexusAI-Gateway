@@ -105,20 +105,31 @@ func (p *TOMLParser) Parse(content []byte) (*TOMLConfig, error) {
 // Save saves configuration to file
 func (p *TOMLParser) Save(config *TOMLConfig) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	file, err := os.Create(p.configPath)
 	if err != nil {
+		p.mu.Unlock()
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
 	defer file.Close()
 
 	if err := toml.NewEncoder(file).Encode(config); err != nil {
+		p.mu.Unlock()
 		return fmt.Errorf("failed to encode TOML: %w", err)
 	}
 
+	// Copy watchers before modifying state
+	watchers := make([]func(*TOMLConfig), len(p.watchers))
+	copy(watchers, p.watchers)
+
 	p.config = config
-	p.notifyWatchers()
+	p.mu.Unlock()
+
+	// Notify outside of lock
+	for _, watcher := range watchers {
+		watcher(p.config)
+	}
+
 	return nil
 }
 
@@ -157,7 +168,15 @@ func (p *TOMLParser) Watch(ctx context.Context) error {
 				if err := p.Load(); err != nil {
 					continue
 				}
-				p.notifyWatchers()
+				// Copy config and watchers before releasing lock
+				config := p.GetConfig()
+				p.mu.RLock()
+				watchers := make([]func(*TOMLConfig), len(p.watchers))
+				copy(watchers, p.watchers)
+				p.mu.RUnlock()
+				for _, watcher := range watchers {
+					watcher(config)
+				}
 			}
 		}
 	}
