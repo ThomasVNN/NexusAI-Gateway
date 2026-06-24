@@ -95,7 +95,7 @@ func (t *TeeWriter) Write(ctx context.Context, output *TeeOutput) (string, error
 		return "", fmt.Errorf("failed to marshal output: %w", err)
 	}
 
-	if _, err := f.Write(append(data, '\n'...)); err != nil {
+	if _, err := f.Write(append(data, []byte{'\n'}...)); err != nil {
 		return "", fmt.Errorf("failed to write output: %w", err)
 	}
 
